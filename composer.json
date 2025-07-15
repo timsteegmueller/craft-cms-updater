@@ -1,0 +1,9 @@
+{
+  "name": "test/craft-test-repo",
+  "require": {
+    "craftcms/cms": "^4.0"  // Beispiel für Craft – update triggert das
+  },
+  "config": {
+    "optimize-autoloader": true
+  }
+}
