@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+php:
+build:
+volumnes: 
+- ./craft:/var/www/html
+working_dir: /var/wwww/html
+ports: "8080:80"
+environment:
+DB_HOST: db
+DB_NAME: craft 
+DB_USER: craft 
+DB_PASS: craft 
+
+db:
+image: mysql:8.0
+environment: 
+MYSQL_DATABASE: craft
+MYSQL_USER: craft 
+MYSQL_PASSWORD: craft 
+MYSQL_ROOT_PASSWORD: root
+volumnes: 
+- db_data:/var/lib/mysql
+
+volumnes:
+db_data
