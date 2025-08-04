@@ -19,11 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
-    # === HIER IST DIE KORREKTE STELLE ===
     permissions:
       contents: write
       pull-requests: write
-    # ====================================
     
     services:
       mysql:
@@ -43,9 +41,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        # Du brauchst hier kein separates Token, das permissions-Setting regelt das.
-        # with:
-        #   token: ${{ secrets.GITHUB_TOKEN }}
+
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
