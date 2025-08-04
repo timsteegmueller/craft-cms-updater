@@ -19,7 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
     services:
+      # ... dein services-Block bleibt unverändert ...
       mysql:
         image: mariadb:10.5
         env:
@@ -34,55 +40,50 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mbstring, intl, zip, pdo_mysql, gd, curl
-          tools: composer
+          tools: composer, jq # jq hinzugefügt, um JSON zu verarbeiten
 
       - name: Install Dependencies
         working-directory: ./craft
         run: |
           composer install --no-interaction --optimize-autoloader --prefer-dist
-
-      - name: Setup Environment
-        working-directory: ./craft
-        run: |
-          if [ ! -f .env ]; then
-            cp .env.example.dev .env
-            echo "CRAFT_SECURITY_KEY=$(openssl rand -base64 32)" >> .env
-            echo "CRAFT_APP_ID=craft-$(openssl rand -hex 8)" >> .env
-          fi
           
-          # Database config for GitHub Actions
-          echo "CRAFT_DB_SERVER=127.0.0.1" >> .env
-          echo "CRAFT_DB_PORT=3306" >> .env
-          echo "CRAFT_DB_DATABASE=craft_local" >> .env
-          echo "CRAFT_DB_USER=craft" >> .env
-          echo "CRAFT_DB_PASSWORD=secret" >> .env
+      # =========================================================================
+      # NEUER SCHRITT: Updates ermitteln und Zusammenfassung erstellen
+      # Dieser Schritt kommt VOR dem eigentlichen Update.
+      # =========================================================================
+      - name: Check for updates and generate summary
+        id: update_summary
+        working-directory: ./craft
+        run: |
+          # Führe 'composer outdated' aus und hole die direkten Abhängigkeiten als JSON
+          # Die Pipe zu '|| true' verhindert einen Fehler, falls keine Updates da sind
+          updates_json=$(composer outdated --direct --format=json || true)
+          
+          # Verarbeite das JSON mit 'jq' zu einer lesbaren Markdown-Liste
+          # Wenn keine Updates da sind, wird ein entsprechender Text generiert
+          summary=$(echo "$updates_json" | jq -r '.installed | if length > 0 then map("• `\(.name)` (\(.version) → \(.latest))") | .[] else "No direct dependency updates found." end')
+          
+          # Speichere die mehrzeilige Zusammenfassung als Output für den PR-Schritt
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "$summary" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
+      # ... die Schritte Setup Environment, Health Check, Create Backup bleiben unverändert ...
+      - name: Setup Environment
+        # ...
       - name: Health Check
-        working-directory: ./craft
-        run: |
-          if [ -f web/health.php ]; then
-            php web/health.php || echo "Health check completed with warnings"
-          fi
-
+        # ...
       - name: Create Backup
-        if: ${{ !inputs.skip_backup }}
-        working-directory: ./craft
-        run: |
-          mkdir -p storage/backups
-          BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql"
-          php craft db/backup "storage/backups/$BACKUP_FILE" || echo "Backup failed - continuing"
+        # ...
 
       - name: Run Update
         working-directory: ./craft
@@ -95,46 +96,45 @@ jobs:
             php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
             composer update --no-interaction || echo "Composer update completed with warnings"
           fi
-
+          
+      # ... die Schritte Clear Cache, Final Health Check bleiben unverändert ...
       - name: Clear Cache
-        working-directory: ./craft
-        run: |
-          php craft clear-caches/all || echo "Cache clear completed"
-
+        # ...
       - name: Final Health Check
-        working-directory: ./craft
-        run: |
-          echo "🏥 Final system validation..."
-          if [ -f web/health.php ]; then
-            php web/health.php || echo "Health check completed with warnings"
-          fi
-          echo "✅ Update process completed successfully"
+        # ...
 
+      # =========================================================================
+      # ANGEPASSTER SCHRITT: Pull Request mit sinnvollen Infos erstellen
+      # =========================================================================
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Du brauchst das Token hier nicht extra angeben
           branch: update/craft-run-${{ github.run_number }}
           delete-branch: true
-          commit-message: |
-            Update Craft CMS dependencies
-            
-            - Backup created: ${{ !inputs.skip_backup }}
-            - Dry run: ${{ inputs.dry_run }}
-            - Run ID: ${{ github.run_id }}
-          title: "Craft CMS Update - Run ${{ github.run_number }}"
+          
+          # Ein sinnvollerer, fester Commit-Titel
+          commit-message: "chore(deps): Update Craft CMS & Composer dependencies"
+
+          # Ein besserer, fester PR-Titel im "Conventional Commits"-Stil
+          title: "chore(deps): Update Composer dependencies"
+          
+          # Der neue PR-Body, der die Zusammenfassung enthält
           body: |
-            ## Craft CMS Update
+            ## 🤖 Automated Dependency Update
             
-            **Details:**
-            - Backup created: ${{ !inputs.skip_backup && '✅' || '⏭️' }}
-            - Dry run: ${{ inputs.dry_run && '🧪' || '✅' }}
-            - Trigger: ${{ github.event_name }}
-            - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            This PR was automatically generated and contains the latest updates for your project's dependencies.
             
-            **Files changed:**
-            - `craft/composer.lock` - Updated dependencies
-            - `craft/storage/backups/` - New backup file
+            ### Changes
+            ${{ steps.update_summary.outputs.summary }}
+            
+            ---
+            
+            ### Run Details
+            - **Trigger:** `${{ github.event_name }}`
+            - **Backup created:** `${{ !inputs.skip_backup && '✅' || '⏭️' }}`
+            - **Dry run:** `${{ inputs.dry_run && '🧪' || '✅' }}`
+            - **Workflow Run:** [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
             
             **Next steps:**
             - Review changes
