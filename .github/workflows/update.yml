@@ -1,31 +1,16 @@
 name: Craft CMS Backup & Update
 
 on:
-  workflow_dispatch:
+  repository_dispatch:
+    types: [run-backup-und-update]
 
 jobs:
-  test:
+  backup-and-update:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Projekt auschecken
-      uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: PHP & Composer einrichten
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
-        extensions: mbstring, intl, zip, pdo_mysql
-        tools: composer
-
-    - name: Composer-Abhängigkeiten installieren
-      run: composer install --no-interaction
-
-    - name: Backup ausführen
-      run: php craft/web/backup.php
-
-    - name: Craft-Update ausführen
-      run: php craft update all || echo "Craft Update fehlgeschlagen, ignoriere Fehler (Testumgebung)"
-
-    - name: Composer-Update ausführen
-      run: composer update --no-interaction
+      - name: Test Message
+        run: echo "Webhook trigger erfolgreich empfangen."
