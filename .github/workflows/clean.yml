@@ -7,12 +7,17 @@ on:
         description: 'Skip backup'
         type: boolean
         default: false
+
+      permissions:
+      contents: write
+      pull-requests: write
       dry_run:
         description: 'Dry run only'
         type: boolean
         default: false
   repository_dispatch:
     types: [run-backup-und-update]
+  
 
 jobs:
   update:
