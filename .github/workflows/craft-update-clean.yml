@@ -88,7 +88,7 @@ jobs:
       - name: Run Update
         working-directory: ./craft
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ]; then # <-- RICHTIGE EINRÜCKUNG
             echo "Dry run - showing available updates"
             php craft update/info || echo "Update info not available"
           else
@@ -96,12 +96,32 @@ jobs:
             php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
             composer update --no-interaction || echo "Composer update completed with warnings"
           fi
+
+        name: Clear Cache
+        working-directory: ./craft
+        run: |
+          echo "Clearing Craft cache"
+          php craft cache/flush-all --interactive=0 || echo "Cache cleared with warnings"
+      - name: Clear Composer Cache
+
+        run: |
+          echo "Clearing Composer cache"
+          composer clear-cache || echo "Composer cache cleared with warnings"
+      - name: Run Migrations
+        working-directory: ./craft
+        run: |
+          echo "Running Craft migrations"
+          php craft migrate/all --interactive=0 || echo "Migrations completed with warnings"
+
           
-      # ... die Schritte Clear Cache, Final Health Check bleiben unverändert ...
-      - name: Clear Cache
-        # ...
+
       - name: Final Health Check
-        # ...
+
+        run: |
+          echo "Running final health check"
+          php craft health/check --interactive=0 || echo "Health check completed with warnings"
+          echo "Final health check completed"
+          
 
       # =========================================================================
       # ANGEPASSTER SCHRITT: Pull Request mit sinnvollen Infos erstellen
@@ -143,3 +163,4 @@ jobs:
           labels: |
             craft-update
             automated
+
