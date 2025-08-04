@@ -20,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
     services:
       mysql:
         image: mariadb:10.5
@@ -170,6 +175,39 @@ jobs:
           
           This test simulates the exact update process that would run on customer servers.
           EOF
+
+      - name: Create Pull Request
+        if: ${{ !inputs.dry_run }}
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: test-update/craft-run-${{ github.run_number }}
+          delete-branch: true
+          commit-message: |
+            Test Update with Real Backup Data - Run ${{ github.run_number }}
+            
+            - Backup used: ${{ inputs.backup_file }}
+            - Run ID: ${{ github.run_id }}
+          title: Craft CMS Test Update - Run ${{ github.run_number }}
+          body: |
+            ## 🧪 Craft CMS Test Update
+            
+            **Test Configuration:**
+            - Backup File: `${{ inputs.backup_file }}`
+            - Mode: Full Update with Real Data
+            - Database: MariaDB with restored backup
+            
+            **Files changed:**
+            - `craft/composer.lock` - Updated dependencies
+            - `craft/storage/backups/` - Test backup files
+            
+            **Test Results:**
+            Tested with REAL customer data from base project backup.
+            Update process validated against actual content structure.
+          labels: |
+            test-update
+            automated
+            craft-cms
 
       - name: Cleanup
         if: always()
