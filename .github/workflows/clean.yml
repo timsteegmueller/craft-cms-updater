@@ -121,35 +121,35 @@ jobs:
           echo "✅ Update process completed successfully"
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: update/craft-run-${{ github.run_number }}
-          delete-branch: true
-          commit-message: |
-            Update Craft CMS dependencies
-            
-            - Backup created: ${{ !inputs.skip_backup }}
-            - Dry run: ${{ inputs.dry_run }}
-            - Run ID: ${{ github.run_id }}
-          title: "Craft CMS Update - Run ${{ github.run_number }}"
-          body: |
-            ## Craft CMS Update
-            
-            **Details:**
-            - Backup created: ${{ !inputs.skip_backup && '✅' || '⏭️' }}
-            - Dry run: ${{ inputs.dry_run && '🧪' || '✅' }}
-            - Trigger: ${{ github.event_name }}
-            - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
-            **Files changed:**
-            - `craft/composer.lock` - Updated dependencies
-            - `craft/storage/backups/` - New backup file
-            
-            **Next steps:**
-            - Review changes
-            - Test on staging
-            - Merge for production deployment
-          labels: |
-            craft-update
-            automated
+              uses: peter-evans/create-pull-request@v5
+              with:
+                token: ${{ secrets.GITHUB_TOKEN }}
+                branch: update/craft-run-${{ github.run_number }}
+                delete-branch: true
+                commit-message: |
+                  Update Craft CMS dependencies
+                  
+                  - Backup created: ${{ !inputs.skip_backup }}
+                  - Dry run: ${{ inputs.dry_run }}
+                  - Run ID: ${{ github.run_id }}
+                title: "Craft CMS Update - Run ${{ github.run_number }}"
+                body: |
+                  ## Craft CMS Update
+                  
+                  **Details:**
+                  - Backup created: ${{ !inputs.skip_backup && '✅' || '⏭️' }}
+                  - Dry run: ${{ inputs.dry_run && '🧪' || '✅' }}
+                  - Trigger: ${{ github.event_name }}
+                  - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+                  
+                  **Files changed:**
+                  - `craft/composer.lock` - Updated dependencies
+                  - `craft/storage/backups/` - New backup file
+                  
+                  **Next steps:**
+                  - Review changes
+                  - Test on staging
+                  - Merge for production deployment
+                labels: |
+                  craft-update
+                  automated
