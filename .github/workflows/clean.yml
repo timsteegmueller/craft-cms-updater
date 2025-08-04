@@ -8,9 +8,7 @@ on:
         type: boolean
         default: false
 
-  permissions:
-      contents: write
-      pull-requests: write
+
       dry_run:
         description: 'Dry run only'
         type: boolean
@@ -23,6 +21,10 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    
+    permissions:
+      contents: write
+      pull-requests: write
     
     services:
       mysql:
