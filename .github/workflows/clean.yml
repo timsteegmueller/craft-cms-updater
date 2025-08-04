@@ -7,15 +7,12 @@ on:
         description: 'Skip backup'
         type: boolean
         default: false
-
-
       dry_run:
         description: 'Dry run only'
         type: boolean
         default: false
   repository_dispatch:
     types: [run-backup-und-update]
-  
 
 jobs:
   update:
@@ -42,6 +39,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,13 +52,12 @@ jobs:
           php-version: '8.2'
           extensions: mbstring, intl, zip, pdo_mysql, gd, curl
           tools: composer
-      - name: Generate branch name
-        id: vars
-        run: echo "branch_name=update/craft-cms-3-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
       - name: Install Dependencies
         working-directory: ./craft
         run: |
           composer install --no-interaction --optimize-autoloader --prefer-dist
+
       - name: Setup Environment
         working-directory: ./craft
         run: |
@@ -76,12 +73,14 @@ jobs:
           echo "CRAFT_DB_DATABASE=craft_local" >> .env
           echo "CRAFT_DB_USER=craft" >> .env
           echo "CRAFT_DB_PASSWORD=secret" >> .env
+
       - name: Health Check
         working-directory: ./craft
         run: |
           if [ -f web/health.php ]; then
             php web/health.php || echo "Health check completed with warnings"
           fi
+
       - name: Create Backup
         if: ${{ !inputs.skip_backup }}
         working-directory: ./craft
@@ -89,6 +88,7 @@ jobs:
           mkdir -p storage/backups
           BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql"
           php craft db/backup "storage/backups/$BACKUP_FILE" || echo "Backup failed - continuing"
+
       - name: Run Update
         working-directory: ./craft
         run: |
@@ -100,10 +100,12 @@ jobs:
             php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
             composer update --no-interaction || echo "Composer update completed with warnings"
           fi
+
       - name: Clear Cache
         working-directory: ./craft
         run: |
           php craft clear-caches/all || echo "Cache clear completed"
+
       - name: Final Health Check
         working-directory: ./craft
         run: |
@@ -112,11 +114,18 @@ jobs:
             php web/health.php || echo "Health check completed with warnings"
           fi
           echo "✅ Update process completed successfully"
+
+      - name: Generate PR title and branch
+        id: pr-vars
+        run: |
+          echo "title=Craft CMS Update - Run ${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "branch=update/craft-run-${{ github.run_number }}" >> $GITHUB_OUTPUT
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: update/craft-run-${{ github.run_number }}
+          branch: ${{ steps.pr-vars.outputs.branch }}
           delete-branch: true
           commit-message: |
             Update Craft CMS dependencies
@@ -124,7 +133,7 @@ jobs:
             - Backup created: ${{ !inputs.skip_backup }}
             - Dry run: ${{ inputs.dry_run }}
             - Run ID: ${{ github.run_id }}
-          title: "Craft CMS Update - Run ${{ github.run_number }}"
+          title: ${{ steps.pr-vars.outputs.title }}
           body: |
             ## Craft CMS Update
             
