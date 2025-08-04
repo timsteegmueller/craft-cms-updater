@@ -115,25 +115,21 @@ jobs:
           fi
           echo "✅ Update process completed successfully"
 
-      - name: Generate PR title and branch
-        id: pr-vars
-        run: |
-          echo "title=Craft CMS Update - Run ${{ github.run_number }}" >> $GITHUB_OUTPUT
-          echo "branch=update/craft-run-${{ github.run_number }}" >> $GITHUB_OUTPUT
-
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.pr-vars.outputs.branch }}
+          branch: update/craft-run-${{ github.run_number }}
           delete-branch: true
           commit-message: |
-            Update Craft CMS dependencies
+            Update Craft CMS dependencies - Run ${{ github.run_number }}
             
             - Backup created: ${{ !inputs.skip_backup }}
             - Dry run: ${{ inputs.dry_run }}
             - Run ID: ${{ github.run_id }}
-          title: ${{ steps.pr-vars.outputs.title }}
+          title: Craft CMS Update - Run ${{ github.run_number }}
           body: |
             ## Craft CMS Update
             
