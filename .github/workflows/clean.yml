@@ -115,6 +115,28 @@ jobs:
           fi
           echo "✅ Update process completed successfully"
 
+      - name: Debug PR variables
+        run: |
+          echo "🔍 DEBUG: github.run_number = ${{ github.run_number }}"
+          echo "🔍 DEBUG: github.run_id = ${{ github.run_id }}"
+          echo "🔍 DEBUG: Branch will be: update/craft-run-${{ github.run_number }}"
+          echo "🔍 DEBUG: Title will be: Craft CMS Update - Run ${{ github.run_number }}"
+
+      - name: Create Pull Request (Alternative with gh CLI)
+        if: false  # Deaktiviert - nur als Backup
+        run: |
+          BRANCH_NAME="update/craft-run-${{ github.run_number }}"
+          PR_TITLE="Craft CMS Update - Run ${{ github.run_number }}"
+          
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git checkout -b "$BRANCH_NAME"
+          git add .
+          git commit -m "Update Craft CMS dependencies - Run ${{ github.run_number }}" || echo "No changes to commit"
+          git push origin "$BRANCH_NAME"
+          
+          gh pr create --title "$PR_TITLE" --body "Automated Craft CMS Update" --head "$BRANCH_NAME" --base main
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
