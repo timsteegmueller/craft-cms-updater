@@ -147,8 +147,14 @@ jobs:
           
           echo "✅ Composer Installation abgeschlossen"
           composer show --installed | head -10  # Top 10 Packages anzeigen
+          
+          
 
       # === STEP 4: CRAFT ENVIRONMENT CONFIGURATION ===
+      - name: Generate branch name
+        id: vars
+        run: echo "branch_name=update/craft-cms-3-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+            
       - name: 🔧 Craft Environment Konfiguration vorbereiten
         working-directory: ./craft
         run: |
