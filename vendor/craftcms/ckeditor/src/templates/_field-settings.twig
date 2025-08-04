@@ -1,0 +1,191 @@
+{% import '_includes/forms.twig' as forms %}
+
+{{ forms.componentSelectField({
+  label: 'CKEditor Config'|t('ckeditor'),
+  id: 'cke-config',
+  name: 'ckeConfig',
+  options: plugin('ckeditor').ckeConfigs.getAll(),
+  value: ckeConfig ?? null,
+  limit: 1,
+  createAction: 'ckeditor/cke-configs/edit',
+}) }}
+
+{% embed '_includes/forms/field' with {
+  label: 'Field Limit'|t('app'),
+  instructions: "The maximum number of words or characters the field is allowed to have."|t('ckeditor'),
+  id: 'field-limit',
+  errors: field.getErrors(field.wordLimit ? 'wordLimit' : 'characterLimit')
+} %}
+  {% import "_includes/forms" as forms %}
+  {% block input %}
+    <div class="flex">
+      {{ forms.text({
+        id: 'fieldLimit',
+        name: 'fieldLimit',
+        value: field.wordLimit ?? field.characterLimit,
+        size: 3,
+      }) }}
+      {{ forms.select({
+        id: 'limitUnit',
+        name: 'limitUnit',
+        options: [
+          { value: 'words', label: 'Words'|t('ckeditor') },
+          { value: 'chars', label: 'Characters'|t('app') },
+        ],
+        value: field.characterLimit ? 'chars' : 'words'
+      }) }}
+    </div>
+  {% endblock %}
+{% endembed %}
+
+{{ forms.lightswitchField({
+  id: 'show-word-count',
+  name: 'showWordCount',
+  label: 'Show word count'|t('ckeditor'),
+  on: field.showWordCount
+}) }}
+
+{{ forms.lightswitchField({
+  id: 'parse-embeds',
+  name: 'parseEmbeds',
+  label: 'Parse embeds'|t('ckeditor'),
+  instructions: 'Whether `<oembed>` tags sholud be parsed and replaced with the provider’s embed code.'|t('ckeditor'),
+  warning: 'This should only be enabled if the field output is cached.'|t('ckeditor'),
+  on: field.parseEmbeds,
+}) }}
+
+{% if userGroupOptions|length %}
+<div id="source-editing-groups">
+  {{ forms.checkboxSelectField({
+    id: 'sourceEditingGroups',
+    name: 'sourceEditingGroups',
+    label: 'Who should see the “Source” button?'|t('ckeditor'),
+    options: userGroupOptions,
+    values: field.sourceEditingGroups,
+    allLabel: 'All users'|t('app'),
+    showAllOption: true,
+  }) }}
+</div>
+{% endif %}
+
+<hr>
+
+{% set headlessMode = craft.app.config.general.headlessMode %}
+{% set entryTypes = entryTypeRows ?? [] %}
+
+{{ forms.entryTypeSelectField({
+  label: 'Entry Types'|t('app'),
+  instructions: 'Choose the types of entries that can be created in this field.'|t('app'),
+  id: 'entry-types',
+  name: 'entryTypes[]',
+  values: field.getEntryTypes(),
+  allowOverrides: true,
+  create: true,
+  errors: field.getErrors('entryTypes'),
+  data: {'error-key': 'entryTypes'},
+}) }}
+
+{{ forms.lightswitchField({
+  id: 'expand-entry-buttons',
+  name: 'expandEntryButtons',
+  label: 'Show toolbar buttons for entry types with icons'|t('ckeditor'),
+  instructions: 'Whether entry types with icons should be shown as separate buttons in the toolbar.' |t('ckeditor'),
+  on: field.expandEntryButtons,
+  reverseToggle: 'create-button-label-wrapper',
+}) }}
+
+<hr>
+
+<a class="fieldtoggle" data-target="assets">{{ 'Assets'|t('app') }}</a>
+<div id="assets" class="hidden">
+  {{ forms.checkboxSelectField({
+    id: 'availableVolumes',
+    name: 'availableVolumes',
+    label: 'Available Volumes'|t('ckeditor'),
+    instructions: 'The volumes that should be available when selecting assets.'|t('ckeditor'),
+    options: volumeOptions,
+    values: field.availableVolumes,
+    showAllOption: volumeOptions|length ? true : false
+  }) }}
+
+  {{ forms.checkboxSelectField({
+    id: 'availableTransforms',
+    name: 'availableTransforms',
+    label: 'Available Transforms'|t('ckeditor'),
+    instructions: 'The transforms that should be available when inserting images.'|t('ckeditor'),
+    options: transformOptions,
+    values: field.availableTransforms,
+    showAllOption: transformOptions|length ? true : false
+  }) }}
+
+  {{ forms.selectField({
+    id: 'defaultTransform',
+    name: 'defaultTransform',
+    label: 'Default Transform'|t('ckeditor'),
+    instructions: 'The default transform that should be applied when inserting an image.'|t('ckeditor'),
+    options: defaultTransformOptions,
+    value: field.defaultTransform,
+  }) }}
+
+  {{ forms.checkboxField({
+    label: 'Show unpermitted volumes'|t('ckeditor'),
+    instructions: 'Whether to show volumes that the user doesn’t have permission to view.'|t('ckeditor'),
+    id: 'showUnpermittedVolumes',
+    name: 'showUnpermittedVolumes',
+    checked: field.showUnpermittedVolumes,
+  }) }}
+
+  {{ forms.checkboxField({
+    label: 'Show unpermitted files'|t('ckeditor'),
+    instructions: 'Whether to show files that the user doesn’t have permission to view, per the “View files uploaded by other users” permission.'|t('ckeditor'),
+    id: 'showUnpermittedFiles',
+    name: 'showUnpermittedFiles',
+    checked: field.showUnpermittedFiles,
+  }) }}
+</div>
+
+<hr>
+
+<a class="fieldtoggle" data-target="advanced">{{ "Advanced"|t('ckeditor') }}</a>
+<div id="advanced" class="hidden">
+  {{ forms.checkboxField({
+    label: "Purify HTML"|t('ckeditor'),
+    instructions: 'Removes any potentially-malicious code on save, by running the submitted data through {link}.'|t('ckeditor', {
+      link: '<a href="http://htmlpurifier.org/" rel="noopener" target="_blank">HTML Purifier</a>',
+    }),
+    warning: 'Disable this at your own risk!'|t('ckeditor'),
+    id: 'purify-html',
+    name: 'purifyHtml',
+    checked: field.purifyHtml,
+    toggle: 'purifier-config-container'
+  }) }}
+
+  <div id="purifier-config-container"{% if not field.purifyHtml %} class="hidden"{% endif %}>
+    {{ forms.selectField({
+      label: "HTML Purifier Config"|t('ckeditor'),
+      instructions: "You can save custom {name} configs as {ext} files in {path}."|t('ckeditor', {
+        name: 'HTML Purifier Config',
+        ext: '`.json`',
+        path: '`config/htmlpurifier/`'
+      }) ~
+      ' <a href="http://htmlpurifier.org/live/configdoc/plain.html" rel="noopener" target="_blank">'~"View available settings"|t('ckeditor')~'</a>',
+      id: 'purifier-config',
+      name: 'purifierConfig',
+      options: purifierConfigOptions,
+      value: field.purifierConfig
+    }) }}
+  </div>
+
+  {% if craft.app.config.general.enableGql %}
+    {{ forms.selectField({
+      label: 'GraphQL Mode'|t('app'),
+      id: 'graphql-mode',
+      name: 'graphqlMode',
+      options: [
+        {label: 'Full data'|t('app'), value: 'full'},
+        {label: 'Raw content only'|t('ckeditor'), value: 'raw'},
+      ],
+      value: field.fullGraphqlData ? 'full' : 'raw',
+    }) }}
+  {% endif %}
+</div>
