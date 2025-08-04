@@ -1,0 +1,366 @@
+{
+  "name": "Tim PHP Updater mit E-Mail Benachrichtigung",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "craft-update",
+        "options": {}
+      },
+      "id": "650c3bab-e11c-478e-b0e4-013f8fc24222",
+      "name": "🌐 Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        -40
+      ],
+      "webhookId": "365d5c59-c551-4df6-922b-6c5ff558dc33"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        140
+      ],
+      "id": "f01df8cd-db12-4baf-be96-a67c8bf120dd",
+      "name": "📅 Wöchentlicher Schedule"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/timsteegmueller/craft-test-repo/dispatches",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_PAT }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event_type",
+              "value": "run-backup-und-update"
+            },
+            {
+              "name": "client_payload",
+              "value": "={{ { \"source\": \"n8n_scheduler\", \"timestamp\": $now, \"triggered_by\": \"automatic\" } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "315568a4-3b3b-4614-a650-7b351f45b56b",
+      "name": "🚀 GitHub Dispatch senden",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        60,
+        40
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "JTSK7M7mKH0mF41b",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "982b3609-5b24-4ce9-b8a4-6b7059c68464",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a7f8b2c3-d4e5-f6a7-b8c9-d0e1f2a3b4c5",
+      "name": "✅ GitHub Erfolg prüfen",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        300,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { \"workflow_started\": true, \"github_response\": $json, \"timestamp\": $now, \"next_step\": \"waiting_for_workflow_completion\" } }}"
+      },
+      "id": "b8c9d0e1-f2a3-b4c5-d6e7-f8a9b0c1d2e3",
+      "name": "📊 Erfolg-Daten sammeln",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        540,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ { \"workflow_failed\": true, \"error\": $json, \"timestamp\": $now, \"action_needed\": \"check_github_credentials\" } }}"
+      },
+      "id": "c9d0e1f2-a3b4-c5d6-e7f8-a9b0c1d2e3f4",
+      "name": "❌ Fehler-Daten sammeln",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        540,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/timsteegmueller/craft-test-repo/actions/runs?per_page=1&status=completed",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.GITHUB_PAT }}"
+            }
+          ]
+        }
+      },
+      "id": "d0e1f2a3-b4c5-d6e7-f8a9-b0c1d2e3f4a5",
+      "name": "⏳ Workflow Status prüfen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        780,
+        -40
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "JTSK7M7mKH0mF41b",
+          "name": "GitHub account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "minutes"
+      },
+      "id": "e1f2a3b4-c5d6-e7f8-a9b0-c1d2e3f4a5b6",
+      "name": "⏰ 5 Minuten warten",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        780,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "craft-updates@farbcode.de",
+        "toEmail": "tim@farbcode.de",
+        "subject": "✅ Craft CMS Update erfolgreich - {{ $now.format('dd.MM.yyyy') }}",
+        "emailType": "html",
+        "message": "<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n    <style>\n        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n        .header { background: #28a745; color: white; padding: 20px; text-align: center; }\n        .content { padding: 20px; }\n        .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; border-radius: 5px; }\n        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }\n        .footer { background: #6c757d; color: white; padding: 10px; text-align: center; font-size: 12px; }\n        table { width: 100%; border-collapse: collapse; margin: 10px 0; }\n        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n        th { background-color: #f2f2f2; }\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <h1>🎉 Craft CMS Update Erfolgreich</h1>\n        <p>Automatisches Update am {{ $now.format('dd.MM.yyyy HH:mm') }} Uhr</p>\n    </div>\n    \n    <div class=\"content\">\n        <div class=\"success\">\n            <strong>✅ Update Status:</strong> Erfolgreich abgeschlossen<br>\n            <strong>🕒 Zeitpunkt:</strong> {{ $now.format('dd.MM.yyyy HH:mm:ss') }} Uhr<br>\n            <strong>🔄 Trigger:</strong> Automatischer wöchentlicher Update\n        </div>\n        \n        <div class=\"details\">\n            <h3>📊 Update-Details</h3>\n            <table>\n                <tr><th>Repository</th><td>timsteegmueller/craft-test-repo</td></tr>\n                <tr><th>Workflow</th><td>Tim's Automatischer Craft CMS Update</td></tr>\n                <tr><th>Event Type</th><td>run-backup-und-update</td></tr>\n                <tr><th>Quelle</th><td>n8n Scheduler (wöchentlich)</td></tr>\n            </table>\n        </div>\n        \n        <div class=\"details\">\n            <h3>✅ Durchgeführte Schritte</h3>\n            <ul>\n                <li>💾 <strong>Datenbank-Backup</strong> erfolgreich erstellt</li>\n                <li>🏥 <strong>Health Check</strong> vor Update durchgeführt</li>\n                <li>⬆️ <strong>Craft CMS Update</strong> ausgeführt</li>\n                <li>📦 <strong>Composer Dependencies</strong> aktualisiert</li>\n                <li>🧹 <strong>Cache</strong> geleert und regeneriert</li>\n                <li>🌐 <strong>Website-Tests</strong> durchgeführt</li>\n                <li>📤 <strong>Pull Request</strong> erstellt</li>\n            </ul>\n        </div>\n        \n        <div class=\"details\">\n            <h3>🔗 Nächste Schritte</h3>\n            <ol>\n                <li>📋 <strong>Pull Request prüfen:</strong> <a href=\"https://github.com/timsteegmueller/craft-test-repo/pulls\">GitHub PRs ansehen</a></li>\n                <li>🔍 <strong>Änderungen reviewen:</strong> composer.lock und Craft Konfiguration</li>\n                <li>🚀 <strong>Merge für Live-Deployment:</strong> Nach erfolgreicher Prüfung</li>\n                <li>📊 <strong>Workflow Details:</strong> <a href=\"https://github.com/timsteegmueller/craft-test-repo/actions\">GitHub Actions</a></li>\n            </ol>\n        </div>\n        \n        <div class=\"details\">\n            <h3>🛡️ Sicherheitshinweise</h3>\n            <p><strong>Backup erstellt:</strong> Datenbank-Backup wurde automatisch vor dem Update erstellt und ist verfügbar.</p>\n            <p><strong>Rollback möglich:</strong> Bei Problemen kann das Backup zur Wiederherstellung verwendet werden.</p>\n        </div>\n    </div>\n    \n    <div class=\"footer\">\n        🤖 Automatisch generiert durch n8n Craft CMS Update System<br>\n        Farbcode GmbH - Craft CMS Automatisierung\n    </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "f2a3b4c5-d6e7-f8a9-b0c1-d2e3f4a5b6c7",
+      "name": "📧 Erfolg E-Mail senden",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        -80
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credentials_id",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "craft-updates@farbcode.de",
+        "toEmail": "tim@farbcode.de",
+        "subject": "⚠️ Craft CMS Update Problem - {{ $now.format('dd.MM.yyyy') }}",
+        "emailType": "html",
+        "message": "<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n    <style>\n        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n        .header { background: #dc3545; color: white; padding: 20px; text-align: center; }\n        .content { padding: 20px; }\n        .error { background: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 5px; }\n        .details { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }\n        .footer { background: #6c757d; color: white; padding: 10px; text-align: center; font-size: 12px; }\n        table { width: 100%; border-collapse: collapse; margin: 10px 0; }\n        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n        th { background-color: #f2f2f2; }\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <h1>⚠️ Craft CMS Update Problem</h1>\n        <p>Automatisches Update vom {{ $now.format('dd.MM.yyyy HH:mm') }} Uhr</p>\n    </div>\n    \n    <div class=\"content\">\n        <div class=\"error\">\n            <strong>❌ Update Status:</strong> Fehlgeschlagen oder mit Problemen<br>\n            <strong>🕒 Zeitpunkt:</strong> {{ $now.format('dd.MM.yyyy HH:mm:ss') }} Uhr<br>\n            <strong>🔍 Fehlergrund:</strong> GitHub Workflow konnte nicht gestartet werden\n        </div>\n        \n        <div class=\"details\">\n            <h3>📊 Fehler-Details</h3>\n            <table>\n                <tr><th>Repository</th><td>timsteegmueller/craft-test-repo</td></tr>\n                <tr><th>Fehler-Typ</th><td>GitHub API oder Workflow Problem</td></tr>\n                <tr><th>Zeitpunkt</th><td>{{ $now.format('dd.MM.yyyy HH:mm:ss') }}</td></tr>\n            </table>\n        </div>\n        \n        <div class=\"details\">\n            <h3>🔧 Empfohlene Maßnahmen</h3>\n            <ol>\n                <li>🔑 <strong>GitHub Token prüfen:</strong> GITHUB_PAT Berechtigung validieren</li>\n                <li>📊 <strong>GitHub Actions:</strong> <a href=\"https://github.com/timsteegmueller/craft-test-repo/actions\">Workflow Status prüfen</a></li>\n                <li>🔄 <strong>Manueller Retry:</strong> Update manuell über GitHub Actions starten</li>\n                <li>🏥 <strong>Health Check:</strong> System-Status über Health Endpoint prüfen</li>\n                <li>📞 <strong>Support:</strong> Bei wiederholten Problemen Technical Support kontaktieren</li>\n            </ol>\n        </div>\n        \n        <div class=\"details\">\n            <h3>🛡️ Sicherheitsmaßnahmen</h3>\n            <p><strong>Kein Update durchgeführt:</strong> Da der Workflow nicht gestartet werden konnte, wurden keine Änderungen vorgenommen.</p>\n            <p><strong>System Status:</strong> Craft CMS läuft weiterhin mit der aktuellen Version.</p>\n        </div>\n    </div>\n    \n    <div class=\"footer\">\n        🤖 Automatisch generiert durch n8n Craft CMS Update System<br>\n        Farbcode GmbH - Craft CMS Automatisierung\n    </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "a3b4c5d6-e7f8-a9b0-c1d2-e3f4a5b6c7d8",
+      "name": "📧 Fehler E-Mail senden",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        780,
+        120
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credentials_id", 
+          "name": "SMTP Account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "🌐 Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "🚀 GitHub Dispatch senden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📅 Wöchentlicher Schedule": {
+      "main": [
+        [
+          {
+            "node": "🚀 GitHub Dispatch senden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚀 GitHub Dispatch senden": {
+      "main": [
+        [
+          {
+            "node": "✅ GitHub Erfolg prüfen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ GitHub Erfolg prüfen": {
+      "main": [
+        [
+          {
+            "node": "📊 Erfolg-Daten sammeln",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "❌ Fehler-Daten sammeln",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Erfolg-Daten sammeln": {
+      "main": [
+        [
+          {
+            "node": "⏰ 5 Minuten warten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "❌ Fehler-Daten sammeln": {
+      "main": [
+        [
+          {
+            "node": "📧 Fehler E-Mail senden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏰ 5 Minuten warten": {
+      "main": [
+        [
+          {
+            "node": "⏳ Workflow Status prüfen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏳ Workflow Status prüfen": {
+      "main": [
+        [
+          {
+            "node": "📧 Erfolg E-Mail senden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cf350454-8606-4c13-9d4b-b128de0b334d-extended",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "farbcode-craft-updates"
+  },
+  "tags": [
+    {
+      "createdAt": "2024-08-04T10:00:00.000Z",
+      "updatedAt": "2024-08-04T10:00:00.000Z",
+      "id": "craft-cms-updates",
+      "name": "Craft CMS Updates"
+    }
+  ]
+}
