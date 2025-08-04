@@ -78,11 +78,11 @@ jobs:
 
           
       - name: Health Check
-      working-directory: ./craft
-      run: |
-      if [ -f web/health.php ]; then
-        php web/health.php || echo "Health check completed with warnings"
-      fi
+        working-directory: ./craft
+        run: |
+          if [ -f web/health.php ]; then
+          php web/health.php || echo "Health check completed with warnings"
+          fi
       - name: Create Backup
         if: ${{ !inputs.skip_backup }}
         working-directory: ./craft
