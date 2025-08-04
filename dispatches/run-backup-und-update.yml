@@ -16,6 +16,8 @@ on:
     # Unterstützt automatisiertes Triggern via repository_dispatch (z.B. über n8n)
     repository_dispatch:
         types: [run-backup-und-update]
+        branches:
+            - main
 
 jobs:
     update:
