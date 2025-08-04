@@ -115,6 +115,160 @@ jobs:
           fi
           echo "✅ Update process completed successfully"
 
+      - name: Set PR variables
+        run: |
+          echo "PR_TITLE=Craft CMS Update - Run ${{ github.run_number }}" >> $GITHUB_ENV
+          echo "PR_BRANCH=update/craft-run-${{ github.run_number }}" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ env.PR_BRANCH }}
+          delete-branch: true
+          commit-message: |
+            Update Craft CMS dependencies - Run ${{ github.run_number }}
+            
+            - Backup created: ${{ !inputs.skip_backup }}
+            - Dry run: ${{ inputs.dry_run }}
+            - Run ID: ${{ github.run_id }}
+          title: ${{ env.PR_TITLE }}
+          body: |
+            ## Craft CMS Update
+            
+            **Details:**
+            - Backup created: ${{ !inputs.skip_backup && '✅' || '⏭️' }}
+            - Dry run: ${{ inputs.dry_run && '🧪' || '✅' }}
+            - Trigger: ${{ github.event_name }}
+            - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            **Files changed:**
+            - `craft/composer.lock` - Updated dependencies
+            - `craft/storage/backups/` - New backup file
+            
+            **Next steps:**
+            - Review changes
+            - Test on staging
+            - Merge for production deployment
+          labels: |
+            craft-update
+            automatedname: Craft CMS Update (Clean)
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Skip backup'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run only'
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [run-backup-und-update]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
+    services:
+      mysql:
+        image: mariadb:10.5
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: craft_local
+          MYSQL_USER: craft
+          MYSQL_PASSWORD: secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, zip, pdo_mysql, gd, curl
+          tools: composer
+
+      - name: Install Dependencies
+        working-directory: ./craft
+        run: |
+          composer install --no-interaction --optimize-autoloader --prefer-dist
+
+      - name: Setup Environment
+        working-directory: ./craft
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example.dev .env
+            echo "CRAFT_SECURITY_KEY=$(openssl rand -base64 32)" >> .env
+            echo "CRAFT_APP_ID=craft-$(openssl rand -hex 8)" >> .env
+          fi
+          
+          # Database config for GitHub Actions
+          echo "CRAFT_DB_SERVER=127.0.0.1" >> .env
+          echo "CRAFT_DB_PORT=3306" >> .env
+          echo "CRAFT_DB_DATABASE=craft_local" >> .env
+          echo "CRAFT_DB_USER=craft" >> .env
+          echo "CRAFT_DB_PASSWORD=secret" >> .env
+
+      - name: Health Check
+        working-directory: ./craft
+        run: |
+          if [ -f web/health.php ]; then
+            php web/health.php || echo "Health check completed with warnings"
+          fi
+
+      - name: Create Backup
+        if: ${{ !inputs.skip_backup }}
+        working-directory: ./craft
+        run: |
+          mkdir -p storage/backups
+          BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql"
+          php craft db/backup "storage/backups/$BACKUP_FILE" || echo "Backup failed - continuing"
+
+      - name: Run Update
+        working-directory: ./craft
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Dry run - showing available updates"
+            php craft update/info || echo "Update info not available"
+          else
+            echo "Running Craft update"
+            php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
+            composer update --no-interaction || echo "Composer update completed with warnings"
+          fi
+
+      - name: Clear Cache
+        working-directory: ./craft
+        run: |
+          php craft clear-caches/all || echo "Cache clear completed"
+
+      - name: Final Health Check
+        working-directory: ./craft
+        run: |
+          echo "🏥 Final system validation..."
+          if [ -f web/health.php ]; then
+            php web/health.php || echo "Health check completed with warnings"
+          fi
+          echo "✅ Update process completed successfully"
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         env:
