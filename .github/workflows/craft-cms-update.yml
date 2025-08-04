@@ -85,8 +85,6 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-          --character-set-server=utf8mb4
-          --collation-server=utf8mb4_unicode_ci
 
     # ==========================================================================
     # WORKFLOW STEPS (SEQUENZIELL AUSGEFÜHRT)
@@ -169,6 +167,14 @@ jobs:
           else
             echo "✅ .env Datei bereits vorhanden"
           fi
+          
+          # GitHub Actions MariaDB Service Konfiguration
+          echo "🔧 MariaDB Service Verbindung konfigurieren..."
+          echo "CRAFT_DB_SERVER=127.0.0.1" >> .env
+          echo "CRAFT_DB_PORT=3306" >> .env
+          echo "CRAFT_DB_DATABASE=craft_local" >> .env
+          echo "CRAFT_DB_USER=craft" >> .env
+          echo "CRAFT_DB_PASSWORD=secret" >> .env
           
           # Environment Variablen validieren
           echo "🔍 Environment Validierung:"
