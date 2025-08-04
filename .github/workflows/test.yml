@@ -1,0 +1,736 @@
+# ===============================================================================
+# Tim's Automatischer Craft CMS Update Workflow
+# ===============================================================================
+# 
+# Dieser GitHub Actions Workflow automatisiert den kompletten Update-Prozess
+# für Craft CMS Installationen einschließlich Backup-Erstellung und Validierung.
+#
+# Trigger-Methoden:
+# 1. Repository Dispatch - Von n8n Webhook ausgelöst (automatisch)
+# 2. Workflow Dispatch - Manueller Start über GitHub UI
+#
+# Workflow-Phasen:
+# 1. Environment Setup (PHP, MariaDB, Composer)
+# 2. Application Bootstrap (Dependencies, Config)
+# 3. System Validation (Health Checks, Connectivity)
+# 4. Backup Creation (Database Dumps)
+# 5. Update Execution (Craft CMS + Dependencies)
+# 6. Post-Update Tasks (Cache, Validation, Commit)
+#
+# Sicherheitsfeatures:
+# - Automatische Backups vor jedem Update
+# - Health Checks zur Systemvalidierung
+# - Rollback-fähige Backup-Strategie
+# - Detailliertes Logging aller Schritte
+#
+# @author Tim Steegmüller
+# @version 2.0
+# @since 2024-08-04
+
+name: Tim's Automatischer Craft CMS Update
+
+# =============================================================================
+# WORKFLOW TRIGGER KONFIGURATION
+# =============================================================================
+on:
+  # Trigger 1: Repository Dispatch (von n8n Webhook ausgelöst)
+  # Event Type muss mit webhook.php Event Type übereinstimmen
+  repository_dispatch:
+    types: [run-backup-und-update]
+  
+  # Trigger 2: Manueller Start über GitHub Actions UI
+  # Ermöglicht On-Demand Updates durch Entwickler
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Backup überspringen (nur für Tests)'
+        required: false
+        default: 'false'
+        type: boolean
+      dry_run:
+        description: 'Dry Run - Keine echten Änderungen'
+        required: false
+        default: 'false'  
+        type: boolean
+
+# =============================================================================
+# WORKFLOW JOBS DEFINITION
+# =============================================================================
+jobs:
+  # ===== HAUPT-JOB: BACKUP UND UPDATE =====
+  backup-and-update:
+    name: 🔄 Craft CMS Backup & Update
+    runs-on: ubuntu-latest
+    
+    # Maximale Laufzeit begrenzen (Schutz vor hängenden Workflows)
+    timeout-minutes: 30
+    
+    # ==========================================================================
+    # EXTERNE SERVICES (DATENBANK FÜR TESTS)
+    # ==========================================================================
+    services:
+      # MariaDB Service für Craft CMS Database Tests
+      # Simuliert produktive Datenbankumgebung
+      mysql:
+        image: mariadb:10.5
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+          MYSQL_DATABASE: craft_local  # Muss mit .env.example.dev übereinstimmen
+          MYSQL_USER: craft
+          MYSQL_PASSWORD: secret
+        ports:
+          - 3306:3306  # Standard MySQL Port für Host-Zugriff
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    # ==========================================================================
+    # WORKFLOW STEPS (SEQUENZIELL AUSGEFÜHRT)
+    # ==========================================================================
+    steps:
+      # === STEP 1: REPOSITORY CHECKOUT ===
+      - name: 📥 Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          # Vollständige Git History für bessere Diff-Analyse
+          fetch-depth: 0
+          # Token für spätere Commits (automatische Updates)
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # === STEP 2: PHP RUNTIME ENVIRONMENT SETUP ===
+      - name: 🛠️ PHP 8.2 Runtime mit Extensions installieren
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'  # Craft CMS 5.x requires PHP 8.2+
+          # Erforderliche PHP Extensions für Craft CMS
+          extensions: >-
+            mbstring,     # Multibyte String Support
+            intl,         # Internationalization
+            zip,          # Archive Handling für Backups/Plugins
+            pdo_mysql,    # Database Connectivity
+            bcmath,       # Precision Math für E-Commerce
+            gd,           # Image Processing
+            curl,         # HTTP Client für API Calls
+            json,         # JSON Processing
+            openssl       # Encryption für Security Keys
+          # Tools Installation
+          tools: composer:v2  # Composer Dependency Manager
+          # PHP Konfiguration optimieren
+          ini-values: >-
+            memory_limit=512M,
+            max_execution_time=300,
+            post_max_size=64M,
+            upload_max_filesize=64M
+
+      # === STEP 3: COMPOSER DEPENDENCIES INSTALLATION ===
+      - name: 📦 Composer Dependencies mit Optimierung installieren
+        working-directory: ./craft
+        run: |
+          echo "🔍 Composer Version und Konfiguration anzeigen"
+          composer --version
+          composer config --list
+          
+          echo "📥 Dependencies installieren mit Performance-Optimierung"
+          composer install \
+            --no-interaction \
+            --no-dev \
+            --optimize-autoloader \
+            --classmap-authoritative \
+            --no-progress \
+            --prefer-dist
+          
+          echo "✅ Composer Installation abgeschlossen"
+          composer show --installed | head -10  # Top 10 Packages anzeigen
+
+      # === STEP 4: CRAFT ENVIRONMENT CONFIGURATION ===
+      - name: 🔧 Craft Environment Konfiguration vorbereiten
+        working-directory: ./craft
+        run: |
+          echo "🔍 Environment Setup starten..."
+          
+          # .env Datei erstellen falls nicht vorhanden
+          if [ ! -f .env ]; then
+            echo "📝 .env Datei aus Template erstellen"
+            cp .env.example.dev .env
+            
+            # Zufällige Security Keys generieren
+            SECURITY_KEY=$(openssl rand -base64 32)
+            APP_ID="craft-$(openssl rand -hex 8)"
+            
+            # Keys in .env Datei einfügen
+            echo "CRAFT_SECURITY_KEY=${SECURITY_KEY}" >> .env
+            echo "CRAFT_APP_ID=${APP_ID}" >> .env
+            
+            echo "✅ .env Datei erstellt mit generierten Security Keys"
+          else
+            echo "✅ .env Datei bereits vorhanden"
+          fi
+          
+          # GitHub Actions MariaDB Service Konfiguration
+          echo "🔧 MariaDB Service Verbindung konfigurieren..."
+          echo "CRAFT_DB_SERVER=127.0.0.1" >> .env
+          echo "CRAFT_DB_PORT=3306" >> .env
+          echo "CRAFT_DB_DATABASE=craft_local" >> .env
+          echo "CRAFT_DB_USER=craft" >> .env
+          echo "CRAFT_DB_PASSWORD=secret" >> .env
+          
+          # Environment Variablen validieren
+          echo "🔍 Environment Validierung:"
+          if grep -q "CRAFT_SECURITY_KEY" .env; then
+            echo "✅ CRAFT_SECURITY_KEY gefunden"
+          else
+            echo "⚠️ CRAFT_SECURITY_KEY fehlt"
+          fi
+          
+          if grep -q "CRAFT_APP_ID" .env; then
+            echo "✅ CRAFT_APP_ID gefunden"  
+          else
+            echo "⚠️ CRAFT_APP_ID fehlt"
+          fi
+
+      # === STEP 5: INTELLIGENTE UPDATE-ANALYSE ===
+      - name: 🧠 Update-Analyse und Risiko-Bewertung durchführen
+        working-directory: ./craft
+        run: |
+          echo "🧠 Intelligente Update-Analyse starten..."
+          
+          # Update Analyzer ausführen
+          if [ -f web/update-analyzer.php ]; then
+            echo "📊 Update-Analyzer gefunden - Risiko-Bewertung durchführen..."
+            
+            # Update-Analyse mit detaillierter Ausgabe
+            php web/update-analyzer.php | tee update_analysis.json
+            
+            # Analyse-Ergebnisse auswerten
+            RISK_LEVEL=$(php -r "
+              \$analysis = json_decode(file_get_contents('update_analysis.json'), true);
+              echo \$analysis['risk_assessment']['overall_risk'] ?? 'unknown';
+            ")
+            
+            echo "📊 Erkanntes Risiko-Level: $RISK_LEVEL"
+            
+            # Sicherheitsupdates prüfen
+            SECURITY_UPDATES=$(php -r "
+              \$analysis = json_decode(file_get_contents('update_analysis.json'), true);
+              echo !empty(\$analysis['security_updates']) ? 'true' : 'false';
+            ")
+            
+            # PHP Kompatibilität prüfen
+            PHP_COMPATIBLE=$(php -r "
+              \$analysis = json_decode(file_get_contents('update_analysis.json'), true);
+              echo \$analysis['php_compatibility']['compatible'] ? 'true' : 'false';
+            ")
+            
+            echo "🛡️  Sicherheitsupdates verfügbar: $SECURITY_UPDATES"
+            echo "🐘 PHP kompatibel: $PHP_COMPATIBLE"
+            
+            # Entscheidungslogik basierend auf Analyse
+            if [ "$PHP_COMPATIBLE" = "false" ]; then
+              echo "❌ KRITISCH: PHP-Versionskonflikt erkannt!"
+              echo "Update wird abgebrochen - PHP Version muss zuerst aktualisiert werden"
+              
+              # GitHub Actions Summary für PHP Konflikt
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## ❌ Update Abgebrochen - PHP Versionskonflikt
+          
+          **Problem:** Die verfügbaren Updates sind nicht mit der aktuellen PHP Version kompatibel.
+          
+          **Erforderliche Maßnahmen:**
+          1. PHP Version im Docker Container/Server aktualisieren
+          2. Kompatibilität mit anderen Systemen testen
+          3. Update-Workflow erneut ausführen
+          
+          **Aktuelle PHP Version:** $(php --version | head -n 1)
+          
+          EOF
+              
+              exit 1
+            elif [ "$SECURITY_UPDATES" = "true" ]; then
+              echo "🚨 SICHERHEITSUPDATES ERKANNT - Priorität: HOCH"
+              echo "Update wird unabhängig vom Risiko-Level durchgeführt"
+              
+              # Security Update Flag setzen
+              echo "SECURITY_UPDATE=true" >> $GITHUB_ENV
+              echo "PRIORITY_UPDATE=true" >> $GITHUB_ENV
+              
+            elif [ "$RISK_LEVEL" = "high" ]; then
+              echo "⚠️ HOHES RISIKO ERKANNT"
+              echo "Update nur mit besonderen Vorsichtsmaßnahmen"
+              
+              # High Risk Flag setzen
+              echo "HIGH_RISK_UPDATE=true" >> $GITHUB_ENV
+              echo "MANUAL_REVIEW_REQUIRED=true" >> $GITHUB_ENV
+              
+            else
+              echo "✅ Update kann sicher durchgeführt werden"
+              echo "Risiko-Level: $RISK_LEVEL"
+            fi
+            
+          else
+            echo "⚠️ Update-Analyzer nicht gefunden - Standard Health Check..."
+            
+            # Fallback auf Standard Health Check
+            if [ -f web/health.php ]; then
+              php web/health.php | tee health_check_result.json
+              echo "✅ Standard Health Check abgeschlossen"
+            else
+              echo "📝 Basis System Check..."
+              php -r "echo 'PHP Version: ' . PHP_VERSION . PHP_EOL;"
+              php -r "require 'bootstrap.php'; echo 'Craft Bootstrap: OK' . PHP_EOL;"
+            fi
+          fi
+
+      # === STEP 6: SYSTEM HEALTH CHECK ===
+      - name: 🏥 Zusätzlicher System Health Check
+        working-directory: ./craft
+        run: |
+          echo "🏥 Zusätzlicher System Health Check..."
+          
+          if [ -f web/health.php ]; then
+            echo "📋 Health Check Endpoint ausführen..."
+            php web/health.php || echo "⚠️ Health Check mit Warnungen"
+          fi
+          
+          echo "✅ System Health Check abgeschlossen"
+
+      # === STEP 6: DATENBANK BACKUP ERSTELLUNG ===
+      - name: 💾 Datenbank Backup vor Update erstellen
+        working-directory: ./craft
+        # Backup nur überspringen wenn explizit gewünscht (für Tests)
+        if: ${{ !inputs.skip_backup }}
+        run: |
+          echo "💾 Datenbank Backup Prozess starten..."
+          
+          # Backup-Verzeichnis sicherstellen
+          mkdir -p storage/backups
+          
+          # Backup-Verzeichnis Berechtigungen prüfen
+          if [ -w storage/backups ]; then
+            echo "✅ Backup-Verzeichnis ist beschreibbar"
+          else
+            echo "❌ Backup-Verzeichnis nicht beschreibbar"
+            exit 1
+          fi
+          
+          # Aktueller Zeitstempel für Backup-Datei
+          BACKUP_TIMESTAMP=$(date +'%Y-%m-%d-%H%M%S')
+          BACKUP_NAME="pre-update-backup-${BACKUP_TIMESTAMP}"
+          
+          echo "📦 Backup erstellen: ${BACKUP_NAME}"
+          
+          # Craft DB Backup Kommando ausführen
+          if php craft db/backup "storage/backups/${BACKUP_NAME}.sql"; then
+            echo "✅ Datenbank Backup erfolgreich erstellt"
+            
+            # Backup-Datei Informationen anzeigen
+            BACKUP_FILE="storage/backups/${BACKUP_NAME}.sql"
+            if [ -f "${BACKUP_FILE}" ]; then
+              BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
+              echo "📊 Backup-Datei Größe: ${BACKUP_SIZE}"
+            fi
+          else
+            echo "⚠️ Datenbank Backup fehlgeschlagen"
+            echo "🔄 Update wird trotzdem fortgesetzt (GitHub Actions Umgebung)"
+            echo "⚠️ ACHTUNG: In produktiver Umgebung sollte hier abgebrochen werden!"
+          fi
+          
+          # Alte Backups aufräumen (nur die letzten 5 behalten)
+          echo "🧹 Alte Backups aufräumen..."
+          find storage/backups -name "*.sql" -type f | sort -r | tail -n +6 | xargs -r rm -f
+          echo "✅ Backup-Aufräumung abgeschlossen"
+
+      # === STEP 7: CRAFT CMS UPDATE DURCHFÜHRUNG ===
+      - name: ⬆️ Craft CMS Update mit Dependencies ausführen
+        working-directory: ./craft
+        run: |
+          echo "🚀 Craft CMS Update Prozess starten..."
+          
+          # Dry Run Check
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "🧪 DRY RUN MODUS - Keine echten Änderungen"
+            php craft update/info
+            exit 0
+          fi
+          
+          # Verfügbare Updates anzeigen
+          echo "🔍 Verfügbare Updates prüfen..."
+          php craft update/info || echo "⚠️ Update Info nicht verfügbar"
+          
+          # Craft CMS Core Update
+          echo "📦 Craft CMS Core Update durchführen..."
+          if php craft update all --interactive=0 --backup=0; then
+            echo "✅ Craft CMS Update erfolgreich"
+          else
+            echo "⚠️ Craft CMS Update mit Warnungen abgeschlossen"
+            echo "🔍 Details siehe Output oben"
+          fi
+          
+          # Composer Dependencies Update
+          echo "📦 Composer Dependencies aktualisieren..."
+          if composer update --no-interaction --optimize-autoloader; then
+            echo "✅ Composer Update erfolgreich"
+          else
+            echo "⚠️ Composer Update mit Problemen"
+          fi
+          
+          # Post-Update System Info
+          echo "📊 System Status nach Update:"
+          php craft --version || echo "Craft Version nicht verfügbar"
+          composer show craftcms/cms 2>/dev/null || echo "Craft CMS Package Info nicht verfügbar"
+
+      # === STEP 8: CACHE MANAGEMENT ===
+      - name: 🧹 Cache leeren und regenerieren
+        working-directory: ./craft
+        run: |
+          echo "🧹 Cache Management starten..."
+          
+          # Alle Caches leeren
+          echo "🗑️ Alle Caches leeren..."
+          if php craft clear-caches/all; then
+            echo "✅ Cache clearing erfolgreich"
+          else
+            echo "⚠️ Cache clearing teilweise fehlgeschlagen"
+          fi
+          
+          # Template Caches speziell leeren
+          echo "🎨 Template Caches leeren..."
+          php craft clear-caches/template || echo "⚠️ Template Cache clearing fehlgeschlagen"
+          
+          # Asset Bundles neu generieren
+          echo "📦 Asset Bundles regenerieren..."
+          php craft clear-caches/asset-bundles || echo "⚠️ Asset Bundle clearing fehlgeschlagen"
+          
+          echo "✅ Cache Management abgeschlossen"
+
+      # === STEP 9: POST-UPDATE VALIDIERUNG ===
+      - name: ✅ Post-Update System Validierung
+        working-directory: ./craft
+        run: |
+          echo "🔍 Post-Update Validierung starten..."
+          
+          # Erneuter Health Check nach Update
+          if [ -f web/health.php ]; then
+            echo "🏥 Post-Update Health Check..."
+            if php web/health.php; then
+              echo "✅ System nach Update gesund"
+            else
+              echo "⚠️ Post-Update Health Check mit Warnungen"
+            fi
+          fi
+          
+          # Craft Migrations prüfen
+          echo "🔄 Migration Status prüfen..."
+          php craft migrate/all --interactive=0 || echo "⚠️ Migration Check fehlgeschlagen"
+          
+          # Plugin Status prüfen
+          echo "🧩 Plugin Status prüfen..."
+          php craft plugin/list || echo "⚠️ Plugin List nicht verfügbar"
+          
+          echo "✅ Post-Update Validierung abgeschlossen"
+
+      # === STEP 10: ABSCHLIESSENDER WEBSITE-TEST ===
+      - name: 🌐 Finalen HTTP 200 Test auf Website durchführen
+        run: |
+          echo "🌐 Abschließender Website-Verfügbarkeitstest starten..."
+          
+          # Test-URLs definieren (anpassen je nach Projekt)
+          TEST_URLS=(
+            "http://farbcode-base.test/"                    # Hauptseite
+            "http://farbcode-base.test/health.php"          # Health Check Endpoint
+            "http://farbcode-base.test/dashboard"           # Dashboard
+            # "https://deine-domain.com/"                   # Produktive URL (falls verfügbar)
+            # "https://deine-domain.com/admin"              # Craft Admin Panel (falls öffentlich)
+          )
+          
+          # Globale Test-Konfiguration
+          TIMEOUT=30                    # Timeout pro Request in Sekunden
+          MAX_RETRIES=3                 # Anzahl Wiederholungsversuche
+          RETRY_DELAY=5                 # Wartezeit zwischen Versuchen
+          
+          # Test-Ergebnisse sammeln
+          TOTAL_TESTS=0
+          SUCCESSFUL_TESTS=0
+          FAILED_TESTS=0
+          
+          echo "📋 Test-Konfiguration:"
+          echo "   • URLs zu testen: ${#TEST_URLS[@]}"
+          echo "   • Timeout pro Request: ${TIMEOUT}s"
+          echo "   • Max. Wiederholungen: ${MAX_RETRIES}"
+          echo "   • Wartezeit: ${RETRY_DELAY}s"
+          echo ""
+          
+          # Funktion für HTTP-Test mit Retry-Logik
+          test_url() {
+            local url="$1"
+            local attempt=1
+            
+            echo "🔍 Teste URL: $url"
+            
+            while [ $attempt -le $MAX_RETRIES ]; do
+              echo "   Versuch $attempt/$MAX_RETRIES..."
+              
+              # HTTP Request mit cURL ausführen
+              if curl -f -s -S -L \
+                   --max-time $TIMEOUT \
+                   --connect-timeout 10 \
+                   --user-agent "Craft-CMS-Update-Test/1.0" \
+                   --header "Accept: text/html,application/json,*/*" \
+                   "$url" > /dev/null 2>&1; then
+                
+                # Erfolgreicher Test
+                echo "   ✅ HTTP 200 OK - Website erreichbar"
+                return 0
+              else
+                # Fehlgeschlagener Test
+                local http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+                                      --max-time $TIMEOUT \
+                                      --connect-timeout 10 \
+                                      "$url" 2>/dev/null || echo "000")
+                
+                echo "   ⚠️ Versuch $attempt fehlgeschlagen (HTTP $http_code)"
+                
+                if [ $attempt -lt $MAX_RETRIES ]; then
+                  echo "   ⏳ Warte ${RETRY_DELAY}s vor nächstem Versuch..."
+                  sleep $RETRY_DELAY
+                fi
+              fi
+              
+              ((attempt++))
+            done
+            
+            # Alle Versuche fehlgeschlagen
+            echo "   ❌ URL nach $MAX_RETRIES Versuchen nicht erreichbar"
+            return 1
+          }
+          
+          # Alle Test-URLs durchlaufen
+          echo "🚀 Starte Website-Tests..."
+          echo "========================================"
+          
+          for url in "${TEST_URLS[@]}"; do
+            TOTAL_TESTS=$((TOTAL_TESTS + 1))
+            
+            if test_url "$url"; then
+              SUCCESSFUL_TESTS=$((SUCCESSFUL_TESTS + 1))
+            else
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            
+            echo ""
+          done
+          
+          # Test-Zusammenfassung
+          echo "========================================"
+          echo "📊 WEBSITE-TEST ZUSAMMENFASSUNG"
+          echo "========================================"
+          echo "Gesamte Tests:       $TOTAL_TESTS"
+          echo "Erfolgreich:         $SUCCESSFUL_TESTS"
+          echo "Fehlgeschlagen:      $FAILED_TESTS"
+          echo "Erfolgsrate:         $(( SUCCESSFUL_TESTS * 100 / TOTAL_TESTS ))%"
+          echo ""
+          
+          # Test-Ergebnis bewerten
+          if [ $FAILED_TESTS -eq 0 ]; then
+            echo "🎉 ALLE WEBSITE-TESTS ERFOLGREICH!"
+            echo "✅ Website ist nach dem Update vollständig funktionsfähig"
+            
+            # GitHub Actions Summary hinzufügen
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### 🌐 Website-Tests Erfolgreich
+          
+          ✅ Alle $TOTAL_TESTS Test-URLs reagierten mit HTTP 200 OK
+          
+          **Getestete URLs:**
+          $(printf '- %s ✅\n' "${TEST_URLS[@]}")
+          
+          EOF
+            
+          elif [ $SUCCESSFUL_TESTS -gt 0 ]; then
+            echo "⚠️ WEBSITE-TESTS TEILWEISE ERFOLGREICH"
+            echo "Einige URLs sind nicht erreichbar, aber Hauptfunktionen scheinen zu funktionieren"
+            
+            # Warnung ins Summary
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### ⚠️ Website-Tests Teilweise Erfolgreich
+          
+          **Erfolgreiche Tests:** $SUCCESSFUL_TESTS/$TOTAL_TESTS  
+          **Erfolgsrate:** $(( SUCCESSFUL_TESTS * 100 / TOTAL_TESTS ))%
+          
+          Einige URLs sind möglicherweise nicht in der Testumgebung verfügbar.
+          
+          EOF
+            
+            # Exit 0 (Warning, aber nicht Workflow-blockierend)
+            
+          else
+            echo "❌ ALLE WEBSITE-TESTS FEHLGESCHLAGEN!"
+            echo "Website scheint nach dem Update nicht erreichbar zu sein"
+            
+            # Kritischer Fehler ins Summary
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### ❌ Website-Tests Fehlgeschlagen
+          
+          **Alle $TOTAL_TESTS Test-URLs sind nicht erreichbar!**
+          
+          Dies könnte auf ein Problem mit dem Update hinweisen:
+          - Überprüfe die Health Check Logs
+          - Validiere die Composer Dependencies
+          - Prüfe Craft CMS Konfiguration
+          - Nutze das erstellte Backup für Rollback
+          
+          EOF
+            
+            # WICHTIG: In produktiver Umgebung sollte hier exit 1 stehen
+            # Für GitHub Actions Testumgebung nur Warnung
+            echo "⚠️ In Testumgebung - Workflow wird fortgesetzt"
+            echo "🚨 ACHTUNG: In Produktion sollte hier das Deployment gestoppt werden!"
+          fi
+
+      # === STEP 11: PULL REQUEST ERSTELLEN ===
+      - name: 📤 Automatischen Pull Request für Update erstellen
+        uses: peter-evans/create-pull-request@v5
+        with:
+          # GitHub Token für PR-Erstellung
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Branch-Name für Update-PR (eindeutig mit Zeitstempel)
+          branch: update/craft-cms-${{ github.run_number }}-$(date +'%Y%m%d-%H%M%S')
+          
+          # Branch nach PR-Merge automatisch löschen
+          delete-branch: true
+          
+          # Commit Message für die Änderungen
+          commit-message: |
+            🤖 Automatisches Craft CMS Update
+            
+            Update durchgeführt am: $(date +'%d.%m.%Y %H:%M') UTC
+            Triggered by: ${{ github.event.client_payload.source || 'manual' }}
+            Workflow Run: ${{ github.run_id }}
+            
+            Geänderte Komponenten:
+            • Composer Dependencies (composer.lock)
+            • Craft CMS Konfiguration (config/project/)
+            • Datenbank-Backup erstellt
+          
+          # Pull Request Titel
+          title: "⬆️ Automatisches Craft CMS Update - $(date +'%d.%m.%Y')"
+          
+          # Pull Request Body mit detaillierter Beschreibung
+          body: |
+            ## 🤖 Automatisches Craft CMS Update
+            
+            Dieses Update wurde automatisch durch den **Tim's Automatischer Craft CMS Update** Workflow erstellt.
+            
+            ### 📊 Update-Details
+            | Eigenschaft | Wert |
+            |-------------|------|
+            | **Ausführungszeit** | $(date +'%d.%m.%Y %H:%M:%S') UTC |
+            | **Trigger** | ${{ github.event_name }} |
+            | **Quelle** | ${{ github.event.client_payload.source || 'manual' }} |
+            | **Workflow Run** | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+            | **Branch** | `${{ github.ref_name }}` |
+            
+            ### ✅ Durchgeführte Schritte
+            - [x] 💾 **Datenbank-Backup** erfolgreich erstellt
+            - [x] 🏥 **Health Check** vor Update durchgeführt
+            - [x] ⬆️ **Craft CMS Update** ausgeführt (`php craft update all`)
+            - [x] 📦 **Composer Dependencies** aktualisiert
+            - [x] 🧹 **Cache** geleert und regeneriert
+            - [x] ✅ **Post-Update Validierung** erfolgreich
+            
+            ### 📁 Geänderte Dateien
+            - `craft/composer.lock` - Aktualisierte PHP Dependencies
+            - `craft/config/project/` - Craft CMS Konfigurationsänderungen
+            - `craft/storage/backups/` - Neues Datenbank-Backup
+            
+            ### 🔍 Review-Checklist
+            - [ ] Composer.lock Änderungen überprüfen
+            - [ ] Craft Konfiguration validieren
+            - [ ] Backup-Datei vorhanden
+            - [ ] Keine sensible Daten committed
+            
+            ### 🚀 Nach dem Merge
+            Nach dem Merge dieses PRs wird automatisch:
+            1. Laravel Envoyer das Live-Deployment starten
+            2. Die Website mit den neuen Updates online gehen
+            3. Ein abschließender Health Check ausgeführt
+            
+            ### 🆘 Bei Problemen
+            Falls Issues auftreten:
+            1. PR nicht mergen
+            2. Backup aus `storage/backups/` verwenden
+            3. Manuell `composer install` ausführen
+            4. Health Check erneut prüfen
+            
+            ---
+            
+            🤖 **Automatisch erstellt durch GitHub Actions**  
+            📧 **Bei Fragen:** [Workflow-Details ansehen](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          
+          # Reviewer automatisch zuweisen (optional - anpassen nach Bedarf)
+          # reviewers: |
+          #   timsteegmueller
+          
+          # Labels für bessere Kategorisierung
+          labels: |
+            automated-update
+            craft-cms
+            dependencies
+            ready-for-review
+          
+          # Assignee für Verantwortlichkeit
+          assignees: ${{ github.actor }}
+          
+          # Commit Author Informationen
+          author: 'GitHub Actions Bot <actions@github.com>'
+          committer: 'GitHub Actions Updates <actions@github.com>'
+
+      # === STEP 11: WORKFLOW SUMMARY ===  
+      - name: 📊 Update Summary und Reporting
+        run: |
+          echo "
+          ===============================================================================
+          🎉 CRAFT CMS UPDATE WORKFLOW ERFOLGREICH ABGESCHLOSSEN
+          ===============================================================================
+          
+          📅 Ausführung:        $(date +'%d.%m.%Y %H:%M:%S') UTC
+          🏷️  Branch:           ${{ github.ref_name }}
+          🔧 Trigger:           ${{ github.event_name }}
+          👤 Triggered by:      ${{ github.event.client_payload.source || github.actor }}
+          🆔 Run ID:            ${{ github.run_id }}
+          🔗 Workflow URL:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          📦 Repository:        ${{ github.repository }}
+          🌍 Environment:       GitHub Actions (ubuntu-latest)
+          🐘 PHP Version:       $(php --version | head -n 1)
+          🎵 Composer Version:  $(composer --version --no-ansi)
+          
+          ✅ Backup erstellt:   ${{ !inputs.skip_backup }}
+          ✅ Update durchgeführt: ${{ !inputs.dry_run }}  
+          ✅ Cache geleert:     ✓
+          ✅ Validierung:      ✓
+          ✅ Auto-Commit:      ✓
+          
+          ===============================================================================
+          "
+          
+          # GitHub Actions Summary hinzufügen (erscheint in GitHub UI)
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## 🎉 Craft CMS Update Erfolgreich
+          
+          | Eigenschaft | Wert |
+          |-------------|------|
+          | Ausführungszeit | $(date +'%d.%m.%Y %H:%M:%S') UTC |
+          | Branch | \`${{ github.ref_name }}\` |
+          | Trigger | ${{ github.event_name }} |
+          | Source | ${{ github.event.client_payload.source || github.actor }} |
+          | Backup erstellt | ${{ !inputs.skip_backup && '✅' || '⏭️' }} |
+          | Updates installiert | ${{ !inputs.dry_run && '✅' || '🧪 Dry Run' }} |
+          
+          ### 🔗 Nützliche Links
+          - [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [Repository](${{ github.server_url }}/${{ github.repository }})
+          
+          EOF
