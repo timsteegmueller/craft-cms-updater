@@ -124,6 +124,10 @@ jobs:
             post_max_size=64M,
             upload_max_filesize=64M
 
+      - name: Generate branch name
+        id: vars
+        run: echo "branch_name=update/craft-cms-3-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
       # === STEP 3: COMPOSER DEPENDENCIES INSTALLATION ===
       - name: 📦 Composer Dependencies mit Optimierung installieren
         working-directory: ./craft
@@ -595,7 +599,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           
           # Branch-Name für Update-PR (eindeutig mit Zeitstempel)
-          branch: update/craft-cms-${{ github.run_number }}-$(date +'%Y%m%d-%H%M%S')
+          branch: ${{ steps.vars.outputs.branch_name }}
           
           # Branch nach PR-Merge automatisch löschen
           delete-branch: true
