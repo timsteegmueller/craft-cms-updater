@@ -8,7 +8,7 @@ on:
         type: boolean
         default: false
 
-      permissions:
+  permissions:
       contents: write
       pull-requests: write
       dry_run:
