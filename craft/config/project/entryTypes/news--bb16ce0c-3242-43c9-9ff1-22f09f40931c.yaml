@@ -1,0 +1,102 @@
+color: sky
+fieldLayouts:
+  455ddef2-f7a2-431e-96ee-573004837f14:
+    tabs:
+      -
+        elementCondition: null
+        elements:
+          -
+            autocapitalize: true
+            autocomplete: false
+            autocorrect: true
+            class: null
+            dateAdded: '2025-04-20T21:15:20+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            inputType: null
+            instructions: null
+            label: null
+            max: null
+            min: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            required: true
+            size: null
+            step: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\entries\EntryTitleField
+            uid: 3e704131-da2c-42dd-8e11-7fa0eed661da
+            userCondition: null
+            warning: null
+            width: 100
+          -
+            dateAdded: '2025-05-02T13:14:25+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 1eb20c72-751a-4b40-a5ae-3b15113d5dad # Bilder
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: Bild
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: a8368ec7-1cfa-4d49-8127-0d39fef96e7c
+            userCondition: null
+            warning: null
+            width: 50
+          -
+            dateAdded: '2025-05-02T13:05:51+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 85aaa9bf-8bf2-449e-b9f2-4bbad862e5fc # Text
+            handle: preview
+            includeInCards: false
+            instructions: null
+            label: Vorschautext
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: d64ed295-c466-4b10-a37f-236f4d9e96ea
+            userCondition: null
+            warning: null
+            width: 50
+          -
+            dateAdded: '2025-05-02T13:05:51+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: f6da7d8c-6a08-412e-ba9f-563221bc7e4a # Blöcke
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: fc49441d-c995-43a5-8cc0-9041ba9546ba
+            userCondition: null
+            warning: null
+            width: 100
+        name: Content
+        uid: c389d1a1-3e07-4d09-a4cf-ab4b3bb7d7e3
+        userCondition: null
+handle: news
+hasTitleField: true
+icon: memo
+name: News
+showSlugField: true
+showStatusField: true
+slugTranslationKeyFormat: null
+slugTranslationMethod: site
+titleFormat: null
+titleTranslationKeyFormat: null
+titleTranslationMethod: site

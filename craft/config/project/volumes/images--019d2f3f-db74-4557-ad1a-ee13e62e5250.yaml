@@ -1,0 +1,93 @@
+altTranslationKeyFormat: null
+altTranslationMethod: none
+fieldLayouts:
+  aeaee093-343b-4add-8e2a-742ad2ebcdf3:
+    tabs:
+      -
+        elementCondition: null
+        elements:
+          -
+            autocapitalize: true
+            autocomplete: false
+            autocorrect: true
+            class: null
+            dateAdded: '2025-04-20T21:20:38+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            inputType: null
+            instructions: null
+            label: null
+            max: null
+            min: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            requirable: false
+            size: null
+            step: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\assets\AssetTitleField
+            uid: 9d4ded72-2e1b-44c2-b221-bc21752f6b9d
+            userCondition: null
+            warning: null
+            width: 100
+          -
+            attribute: alt
+            class: null
+            cols: null
+            dateAdded: '2025-05-02T13:06:40+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            instructions: null
+            label: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            requirable: true
+            required: false
+            rows: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\assets\AltField
+            uid: 91ee10fc-fd2c-437c-805e-e6230bf7357b
+            userCondition: null
+            warning: null
+            width: 100
+          -
+            dateAdded: '2025-05-02T13:06:40+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 85aaa9bf-8bf2-449e-b9f2-4bbad862e5fc # Text
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: 'Bildunterschrift / Bildrechte'
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: 2e3dbf55-5c54-4569-b89e-b8c3109f6630
+            userCondition: null
+            warning: null
+            width: 100
+        name: Content
+        uid: 2f54e5a8-e763-41bc-b436-2ec41d63fddc
+        userCondition: null
+fs: images
+handle: images
+name: Images
+sortOrder: 1
+subpath: ''
+titleTranslationKeyFormat: null
+titleTranslationMethod: site
+transformFs: images
+transformSubpath: ''

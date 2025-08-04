@@ -1,0 +1,11 @@
+fill: null
+format: webp
+handle: square600x600
+height: 600
+interlace: none
+mode: crop
+name: 'Square 600x600'
+position: center-center
+quality: null
+upscale: true
+width: 600

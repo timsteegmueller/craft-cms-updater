@@ -1,0 +1,8 @@
+/vendor/
+/node_modules/
+/.nuxt/
+/.output/
+/.env
+/storage/
+/craft/storage/
+/craft/backups/

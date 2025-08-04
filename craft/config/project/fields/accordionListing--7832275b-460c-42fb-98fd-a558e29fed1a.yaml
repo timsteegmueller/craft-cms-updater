@@ -1,0 +1,26 @@
+columnSuffix: null
+handle: accordionListing
+instructions: null
+name: 'Accordion Liste'
+searchable: false
+settings:
+  createButtonLabel: null
+  defaultIndexViewMode: cards
+  enableVersioning: false
+  entryTypes:
+    -
+      __assoc__:
+        -
+          - uid
+          - 3e8247a8-0f1d-4986-9ed6-baad2d8b60ed # Subblock Accordion
+  includeTableView: false
+  maxEntries: null
+  minEntries: null
+  pageSize: null
+  propagationKeyFormat: null
+  propagationMethod: all
+  showCardsInGrid: false
+  viewMode: blocks
+translationKeyFormat: null
+translationMethod: site
+type: craft\fields\Matrix

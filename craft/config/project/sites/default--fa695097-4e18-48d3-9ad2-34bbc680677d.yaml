@@ -1,0 +1,9 @@
+baseUrl: $PRIMARY_SITE_URL
+enabled: true
+handle: default
+hasUrls: true
+language: de-DE
+name: farbcode-base
+primary: true
+siteGroup: f9099b13-94de-44df-b0c6-05cea1934bde # farbcode-base
+sortOrder: 1

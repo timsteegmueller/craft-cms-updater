@@ -1,0 +1,65 @@
+dateModified: 1746652577
+email:
+  fromEmail: dev@farbcode.net
+  fromName: farbcode-base
+  transportType: craft\mail\transportadapters\Sendmail
+fs:
+  images:
+    hasUrls: true
+    name: Images
+    settings:
+      path: '@webroot/assets/images'
+    type: craft\fs\Local
+    url: $PRIMARY_SITE_URL/cms/assets/images
+meta:
+  __names__:
+    1eb20c72-751a-4b40-a5ae-3b15113d5dad: Bilder # Bilder
+    0002f9fd-84eb-4a8d-bd0f-a2c73e0a7c51: 'Block Into' # Block Into
+    3e8247a8-0f1d-4986-9ed6-baad2d8b60ed: 'Subblock Accordion' # Subblock Accordion
+    8dd0fc47-7b27-4601-a11f-66d5d76f07a7: 'Größe der Überschrift' # Größe der Überschrift
+    8ff23058-5160-4d97-b0c1-790c84e32741: 'Public Schema' # Public Schema
+    9efc04ac-4454-4bf4-a5e6-5b5736aff523: Überschrift # Überschrift
+    14f7de36-d7ef-4ed0-b62b-92daeaa5e6d0: 'Scale 896xAuto' # Scale 896xAuto
+    019d2f3f-db74-4557-ad1a-ee13e62e5250: Images # Images
+    25bc04c9-5ac2-468a-a2df-6a0c5c22258f: 'Im Menü anzeigen' # Im Menü anzeigen
+    46a280a2-1d45-42de-ba1d-11f61a42c6fd: 'Scale 3:2 672x448' # Scale 3:2 672x448
+    69d8782d-483b-42ee-b645-87512a90f98c: Wiki # Wiki
+    70dace66-e49d-4fc9-9151-5dfa4dbcb687: Anzeigeart # Anzeigeart
+    85aaa9bf-8bf2-449e-b9f2-4bbad862e5fc: Text # Text
+    95f93ccf-9a46-4776-abfe-75366eb3b722: Bildanzeige # Bildanzeige
+    1004b7cf-e09a-417f-a670-e33c241738d0: 'Square 600x600' # Square 600x600
+    8083e8e2-992e-420f-884a-d025841518db: Seiten # Seiten
+    745270c2-203f-4a46-82bc-3e4556145e25: 'Im Header anzeigen' # Im Header anzeigen
+    7832275b-460c-42fb-98fd-a558e29fed1a: 'Accordion Liste' # Accordion Liste
+    aa3c7117-b1bb-4e51-8109-f0607e896277: 'Block Überschrift+Text' # Block Überschrift+Text
+    b8942796-6b3f-40a3-9ec0-7175edff4533: 'Im Footer anzeigen' # Im Footer anzeigen
+    bb077898-5bf2-4031-badf-f5873e977e11: Seiten # Seiten
+    bb16ce0c-3242-43c9-9ff1-22f09f40931c: News # News
+    c3b8d969-c8f1-48db-b9a7-9610edbb3529: 'Block Bilder' # Block Bilder
+    d0df4b5e-00bc-4bba-b6d3-1bade91b9bc3: News # News
+    d0fed89d-b05b-42ab-8cfe-8ae57f49d06e: 'Block Accordion' # Block Accordion
+    e6701c5c-fc8a-4848-826a-534b52346f7f: 'Block News' # Block News
+    f2c3d145-c0bd-4091-af1d-c410c9a5c650: Simple # Simple
+    f6da7d8c-6a08-412e-ba9f-563221bc7e4a: Blöcke # Blöcke
+    f21e2620-d758-4e48-b5cd-11452d242e18: 'Square 400x400' # Square 400x400
+    f9099b13-94de-44df-b0c6-05cea1934bde: farbcode-base # farbcode-base
+    fa695097-4e18-48d3-9ad2-34bbc680677d: farbcode-base # farbcode-base
+plugins:
+  ckeditor:
+    edition: standard
+    enabled: true
+    schemaVersion: 3.0.0.0
+system:
+  edition: solo
+  live: true
+  name: farbcode-base
+  retryDuration: null
+  schemaVersion: 5.7.0.3
+  timeZone: Europe/Berlin
+users:
+  allowPublicRegistration: false
+  defaultGroup: null
+  photoSubpath: null
+  photoVolumeUid: null
+  require2fa: false
+  requireEmailVerification: true

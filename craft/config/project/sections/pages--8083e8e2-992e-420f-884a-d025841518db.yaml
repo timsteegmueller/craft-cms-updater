@@ -1,0 +1,31 @@
+defaultPlacement: end
+enableVersioning: true
+entryTypes:
+  -
+    uid: bb077898-5bf2-4031-badf-f5873e977e11 # Seiten
+handle: pages
+maxAuthors: 1
+name: Seiten
+previewTargets:
+  -
+    __assoc__:
+      -
+        - label
+        - 'Primary entry page'
+      -
+        - urlFormat
+        - '{url}'
+      -
+        - refresh
+        - '1'
+propagationMethod: all
+siteSettings:
+  fa695097-4e18-48d3-9ad2-34bbc680677d: # farbcode-base
+    enabledByDefault: true
+    hasUrls: true
+    template: pages/_entry.twig
+    uriFormat: 'pages/{slug}'
+structure:
+  maxLevels: null
+  uid: 24b79776-133a-430d-b064-ace886f7b080
+type: structure

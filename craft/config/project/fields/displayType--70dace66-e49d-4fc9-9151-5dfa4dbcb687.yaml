@@ -1,0 +1,45 @@
+columnSuffix: null
+handle: displayType
+instructions: null
+name: Anzeigeart
+searchable: false
+settings:
+  customOptions: false
+  options:
+    -
+      __assoc__:
+        -
+          - label
+          - 'Seiten Intro'
+        -
+          - value
+          - pageIntro
+        -
+          - icon
+          - ''
+        -
+          - color
+          - ''
+        -
+          - default
+          - '1'
+    -
+      __assoc__:
+        -
+          - label
+          - Hero
+        -
+          - value
+          - heroIntro
+        -
+          - icon
+          - ''
+        -
+          - color
+          - ''
+        -
+          - default
+          - ''
+translationKeyFormat: null
+translationMethod: none
+type: craft\fields\Dropdown

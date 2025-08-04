@@ -1,0 +1,46 @@
+columnSuffix: null
+handle: blocks
+instructions: null
+name: Blöcke
+searchable: false
+settings:
+  createButtonLabel: 'Neuer Block'
+  defaultIndexViewMode: cards
+  enableVersioning: false
+  entryTypes:
+    -
+      __assoc__:
+        -
+          - uid
+          - aa3c7117-b1bb-4e51-8109-f0607e896277 # Block Überschrift+Text
+    -
+      __assoc__:
+        -
+          - uid
+          - 0002f9fd-84eb-4a8d-bd0f-a2c73e0a7c51 # Block Into
+    -
+      __assoc__:
+        -
+          - uid
+          - c3b8d969-c8f1-48db-b9a7-9610edbb3529 # Block Bilder
+    -
+      __assoc__:
+        -
+          - uid
+          - d0fed89d-b05b-42ab-8cfe-8ae57f49d06e # Block Accordion
+    -
+      __assoc__:
+        -
+          - uid
+          - e6701c5c-fc8a-4848-826a-534b52346f7f # Block News
+  includeTableView: false
+  maxEntries: null
+  minEntries: null
+  pageSize: null
+  propagationKeyFormat: null
+  propagationMethod: all
+  showCardsInGrid: false
+  viewMode: blocks
+translationKeyFormat: null
+translationMethod: site
+type: craft\fields\Matrix

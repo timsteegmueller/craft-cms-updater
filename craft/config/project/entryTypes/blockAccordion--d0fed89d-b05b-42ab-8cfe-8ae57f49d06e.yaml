@@ -1,0 +1,85 @@
+color: null
+fieldLayouts:
+  f0a2f052-9afa-42c5-b69f-8769b243391e:
+    tabs:
+      -
+        elementCondition: null
+        elements:
+          -
+            autocapitalize: true
+            autocomplete: false
+            autocorrect: true
+            class: null
+            dateAdded: '2025-04-20T21:42:44+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            inputType: null
+            instructions: null
+            label: Überschrift
+            max: null
+            min: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            required: true
+            size: null
+            step: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\entries\EntryTitleField
+            uid: 5f3dc5fd-0b35-4197-9c16-eddc9c5042f6
+            userCondition: null
+            warning: null
+            width: 75
+          -
+            dateAdded: '2025-04-20T21:49:46+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 8dd0fc47-7b27-4601-a11f-66d5d76f07a7 # Größe der Überschrift
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: 5c529498-9d20-488d-bae8-34a7d2efc1b2
+            userCondition: null
+            warning: null
+            width: 25
+          -
+            dateAdded: '2025-04-20T21:44:42+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 7832275b-460c-42fb-98fd-a558e29fed1a # Accordion Liste
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: a5648821-b794-4c05-b8a8-e1dc1baa73b0
+            userCondition: null
+            warning: null
+            width: 100
+        name: Content
+        uid: f2a8c534-bc82-41f9-90ad-c61cf1643155
+        userCondition: null
+handle: blockAccordion
+hasTitleField: true
+icon: align-justify
+name: 'Block Accordion'
+showSlugField: true
+showStatusField: true
+slugTranslationKeyFormat: null
+slugTranslationMethod: site
+titleFormat: null
+titleTranslationKeyFormat: null
+titleTranslationMethod: site

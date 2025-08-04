@@ -1,0 +1,85 @@
+color: null
+fieldLayouts:
+  32debbcf-a87c-4220-a8fb-6e0581aa686e:
+    tabs:
+      -
+        elementCondition: null
+        elements:
+          -
+            autocapitalize: true
+            autocomplete: false
+            autocorrect: true
+            class: null
+            dateAdded: '2025-05-01T14:47:41+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            inputType: null
+            instructions: null
+            label: null
+            max: null
+            min: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            required: false
+            size: null
+            step: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\entries\EntryTitleField
+            uid: 48a667a3-994e-425c-852b-61e53f28b352
+            userCondition: null
+            warning: null
+            width: 100
+          -
+            dateAdded: '2025-05-02T13:15:00+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 1eb20c72-751a-4b40-a5ae-3b15113d5dad # Bilder
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: Bilder
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: 9c4ec013-b347-4a74-97f8-6c0cd57a6916
+            userCondition: null
+            warning: null
+            width: 75
+          -
+            dateAdded: '2025-05-02T13:17:26+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 95f93ccf-9a46-4776-abfe-75366eb3b722 # Bildanzeige
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: de644709-b43c-4cc7-9122-ad438e53d449
+            userCondition: null
+            warning: null
+            width: 25
+        name: Content
+        uid: bd1c1564-eb02-462b-b36e-83e185c3ef11
+        userCondition: null
+handle: blockImages
+hasTitleField: true
+icon: image
+name: 'Block Bilder'
+showSlugField: true
+showStatusField: true
+slugTranslationKeyFormat: null
+slugTranslationMethod: site
+titleFormat: null
+titleTranslationKeyFormat: null
+titleTranslationMethod: site

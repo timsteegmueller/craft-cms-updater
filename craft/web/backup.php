@@ -1,27 +1,38 @@
 <?php
 declare(strict_types=1);
 
-$ts = date('Ymd-His');
-$backupFile = __DIR__ . "/../../backups/db/backup-$ts.sql";
-@mkdir(dirname($backupFile), 0777, true);
+/**
+ * Craft CMS Backup Helper
+ *
+ * Führt den offiziellen Craft-Befehl `craft db/backup` aus
+ * innerhalb eines Docker-Containers.
+ */
 
-$db = [
-    'user' => getenv('DB_USER') ?: 'craft',
-    'pass' => getenv('DB_PASS') ?: 'craft',
-    'host' => getenv('DB_HOST') ?: 'db',
-    'name' => getenv('DB_NAME') ?: 'craft',
-];
+$projectRoot = dirname(__DIR__);
+$craftDir = $projectRoot . '/craft';
+$dockerComposePath = shell_exec('which docker-compose');
+$dockerPath = shell_exec('which docker');
 
-$cmd = sprintf(
-    'mysqldump -u%s -p%s -h%s %s > %s',
-    escapeshellarg($db['user']),
-    escapeshellarg($db['pass']),
-    escapeshellarg($db['host']),
-    escapeshellarg($db['name']),
-    escapeshellarg($backupFile)
-);
+if ($dockerComposePath !== null && trim($dockerComposePath) !== '') {
+    $docker = trim($dockerComposePath);
+    $cmd = "$docker exec craft php craft db/backup";
+} elseif ($dockerPath !== null && trim($dockerPath) !== '') {
+    $docker = trim($dockerPath);
+    $cmd = "$docker compose exec craft php craft db/backup";
+} else {
+    http_response_code(500);
+    die("❌ Docker oder Docker Compose wurde nicht gefunden. Stelle sicher, dass exec() erlaubt ist.");
+}
+$cmd = "$docker compose exec craft php craft db/backup";
 
-exec($cmd, $output, $status);
+// Logging
+function logLine(string $message): void {
+    $timestamp = date('Y-m-d H:i:s');
+    echo "[$timestamp] $message\n";
+}
 
-header('Content-Type: text/plain');
-echo $status === 0 ? "✅ Backup erfolgreich: $backupFile" : "❌ Backup fehlgeschlagen!";
+// Ausführung
+$output = [];
+$returnCode = 0;
+exec($cmd, $output, $returnCode);
+

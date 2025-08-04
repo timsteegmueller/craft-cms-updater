@@ -1,0 +1,11 @@
+fill: null
+format: webp
+handle: scale32_672x448
+height: 448
+interlace: none
+mode: crop
+name: 'Scale 3:2 672x448'
+position: center-center
+quality: null
+upscale: true
+width: 672

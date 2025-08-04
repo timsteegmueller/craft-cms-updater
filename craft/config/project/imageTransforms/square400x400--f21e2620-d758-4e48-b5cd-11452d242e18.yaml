@@ -1,0 +1,11 @@
+fill: null
+format: webp
+handle: square400x400
+height: 400
+interlace: none
+mode: crop
+name: 'Square 400x400'
+position: center-center
+quality: null
+upscale: true
+width: 400

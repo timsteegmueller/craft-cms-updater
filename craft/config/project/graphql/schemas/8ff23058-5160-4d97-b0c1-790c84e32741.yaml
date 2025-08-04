@@ -1,0 +1,11 @@
+isPublic: true
+name: 'Public Schema'
+scope:
+  - 'sites.fa695097-4e18-48d3-9ad2-34bbc680677d:read' # farbcode-base
+  - 'sections.d0df4b5e-00bc-4bba-b6d3-1bade91b9bc3:read' # News
+  - 'sections.8083e8e2-992e-420f-884a-d025841518db:read' # Seiten
+  - 'sections.69d8782d-483b-42ee-b645-87512a90f98c:read' # Wiki
+  - 'nestedentryfields.85aaa9bf-8bf2-449e-b9f2-4bbad862e5fc:read' # Text
+  - 'nestedentryfields.7832275b-460c-42fb-98fd-a558e29fed1a:read' # Accordion Liste
+  - 'nestedentryfields.f6da7d8c-6a08-412e-ba9f-563221bc7e4a:read' # Blöcke
+  - 'volumes.019d2f3f-db74-4557-ad1a-ee13e62e5250:read' # Images

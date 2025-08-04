@@ -1,0 +1,85 @@
+color: null
+fieldLayouts:
+  b63697e8-350e-4d84-a8d0-86552420cba4:
+    tabs:
+      -
+        elementCondition: null
+        elements:
+          -
+            autocapitalize: true
+            autocomplete: false
+            autocorrect: true
+            class: null
+            dateAdded: '2025-05-01T14:47:24+00:00'
+            disabled: false
+            elementCondition: null
+            id: null
+            includeInCards: false
+            inputType: null
+            instructions: null
+            label: null
+            max: null
+            min: null
+            name: null
+            orientation: null
+            placeholder: null
+            providesThumbs: false
+            readonly: false
+            required: false
+            size: null
+            step: null
+            tip: null
+            title: null
+            type: craft\fieldlayoutelements\entries\EntryTitleField
+            uid: 9475c269-b9c6-43d2-8974-65a4bbc4c62a
+            userCondition: null
+            warning: null
+            width: 75
+          -
+            dateAdded: '2025-04-20T21:38:17+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 8dd0fc47-7b27-4601-a11f-66d5d76f07a7 # Größe der Überschrift
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: a92a44bf-b238-4a59-a63a-1b64af32f4e2
+            userCondition: null
+            warning: null
+            width: 25
+          -
+            dateAdded: '2025-04-20T21:33:52+00:00'
+            editCondition: null
+            elementCondition: null
+            fieldUid: 85aaa9bf-8bf2-449e-b9f2-4bbad862e5fc # Text
+            handle: null
+            includeInCards: false
+            instructions: null
+            label: null
+            providesThumbs: false
+            required: false
+            tip: null
+            type: craft\fieldlayoutelements\CustomField
+            uid: 954270d9-cb1d-4e4b-b8d3-c02836b641f6
+            userCondition: null
+            warning: null
+            width: 100
+        name: Content
+        uid: 607cde32-c09b-4078-bb67-be23e111c8da
+        userCondition: null
+handle: blockHeadingText
+hasTitleField: true
+icon: font-case
+name: 'Block Überschrift+Text'
+showSlugField: true
+showStatusField: true
+slugTranslationKeyFormat: null
+slugTranslationMethod: site
+titleFormat: null
+titleTranslationKeyFormat: null
+titleTranslationMethod: site
