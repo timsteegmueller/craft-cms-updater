@@ -47,7 +47,9 @@ jobs:
           php-version: '8.2'
           extensions: mbstring, intl, zip, pdo_mysql, gd, curl
           tools: composer
-
+      - name: Generate branch name
+        id: vars
+        run: echo "branch_name=update/craft-cms-3-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
       - name: Install Dependencies
         working-directory: ./craft
         run: |
