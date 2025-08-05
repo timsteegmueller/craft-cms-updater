@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
   repository_dispatch:
-    types: [run-backup-und-update]
+    types: [craft-cms-updater]
 
 jobs:
   update:
