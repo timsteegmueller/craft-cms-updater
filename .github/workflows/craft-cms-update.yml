@@ -11,7 +11,7 @@ on:
         description: 'Dry run only'
         type: boolean
         default: false
-        
+
   repository_dispatch:
     types: [craft-test-mit-backup-db]
 
@@ -19,12 +19,12 @@ jobs:
   test-with-real-data:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    
+
     permissions:
       contents: write
       pull-requests: write
       issues: write
-    
+
     services:
       mysql:
         image: mariadb:10.5
@@ -75,6 +75,75 @@ jobs:
           echo "CRAFT_DB_USER=craft" >> .env
           echo "CRAFT_DB_PASSWORD=secret" >> .env
 
+      # ... (alle Schritte bis hierhin bleiben gleich)
+
+      - name: Set current date for workflow run
+        id: date
+        run: echo "today=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Analyze updates and prepare changelog
+        id: analyze
+        if: ${{ !inputs.dry_run }}
+        run: |
+          CHANGELOG_BODY="Keine Updates gefunden."
+          if ! git diff --quiet ./craft/composer.lock; then
+            # Dein geniales PHP-Skript von früher, um die Unterschiede zu finden
+            CHANGELOG_BODY=$(php -r '
+              $old = json_decode(file_get_contents("./craft/composer.lock.original"), true);
+              $new = json_decode(file_get_contents("./craft/composer.lock"), true);
+              $changes = [];
+              foreach ($new["packages"] as $pkg) {
+                $oldVersion = "neu hinzugefügt";
+                foreach ($old["packages"] as $oldPkg) {
+                  if ($oldPkg["name"] === $pkg["name"]) {
+                    $oldVersion = $oldPkg["version"];
+                    break;
+                  }
+                }
+                if ($oldVersion !== $pkg["version"]) {
+                  $changes[] = "- **" . $pkg["name"] . "**: `" . $oldVersion . "` → `" . $pkg["version"] . "`";
+                }
+              }
+              echo implode("\n", $changes);
+            ')
+          fi
+          # Wir übergeben den Changelog an die nächsten Schritte
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: ${{ !inputs.dry_run }}
+        uses: peter-evans/create-pull-request@v6 # Wichtig: Version v5 oder v6 nutzen
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # 1. SAUBERER BRANCH-NAME MIT DATUM
+          branch: "chore/auto-update-${{ env.today }}"
+          delete-branch: true
+
+          # 2. SAUBERER PR-TITEL MIT DATUM
+          title: "🤖 Chore: Automatisches Craft Update vom ${{ env.today }}"
+
+          commit-message: "chore(deps): Automated Craft CMS dependency updates for ${{ env.today }}"
+
+          # 3. SAUBERER PR-BODY MIT DEM GENERIERTEN CHANGELOG
+          body: |
+            ## 🚀 Automatisches Craft CMS & Plugin Update
+
+            Dieser Pull Request wurde automatisch erstellt und enthält die neuesten Abhängigkeits-Updates.
+
+            ### 📦 Änderungen in diesem Update
+
+            ${{ steps.analyze.outputs.CHANGELOG }}
+
+            ---
+            *Getestet mit dem Backup: `${{ inputs.backup_file }}`*
+            *Workflow-Lauf: [Link](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*
+          labels: |
+            dependencies
+            automated
+            craft-cms
+
       - name: Restore Backup Database
         working-directory: ./craft
         run: |
@@ -84,20 +153,20 @@ jobs:
           BACKUP_FILE="${{ inputs.backup_file }}"
           if [ -f "web/$BACKUP_FILE" ]; then
             echo "✅ Found backup file: $BACKUP_FILE"
-            
+          
             # Import backup into test database
             mysql -h 127.0.0.1 -u craft -psecret craft_local < "web/$BACKUP_FILE"
             echo "✅ Backup restored successfully"
-            
+          
             # Verify data exists
             TABLES=$(mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SHOW TABLES;" | wc -l)
             echo "📊 Database contains $TABLES tables"
-            
+          
           else
             echo "⚠️ Backup file not found: $BACKUP_FILE"
             echo "Available files:"
             ls -la web/*.sql || echo "No SQL files found"
-            
+          
             # Continue with empty DB for testing
             echo "Continuing with empty database for testing..."
           fi
@@ -119,25 +188,25 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "🧪 Dry run - showing available updates with real data"
             php craft update/info || echo "Update info not available"
-            
+          
             # Show some data stats
             echo "📊 Testing with real data:"
             mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SELECT COUNT(*) as entries FROM craft_entries;" || echo "No entries table"
             mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SELECT COUNT(*) as users FROM craft_users;" || echo "No users table"
-            
+          
           else
             echo "⬆️ Running update with real data context..."
-            
+          
             # Create backup of current state
             php craft db/backup "storage/backups/pre-update-$(date +%Y%m%d-%H%M%S).sql" || echo "Backup failed"
-            
+          
             # Run updates
             php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
             composer update --no-interaction || echo "Composer update completed"
-            
+          
             # Clear caches with real data
             php craft clear-caches/all || echo "Cache clear completed"
-            
+          
             # Test with real data
             echo "🧪 Testing updated system with real data..."
             php craft info || echo "Post-update info not available"
