@@ -37,49 +37,45 @@ jobs:
           extensions: mbstring, intl, pdo_mysql, gd, exif, fileinfo, zip, xml, curl, sodium
           ini-values: memory_limit=-1
 
-      - name: CI Pipeline kompakt
-        env:
-          BACKUP_URL:   ${{ secrets.BACKUP_URL }}     # z. B. https://<tunnel>/cms/backup.php
-          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}   # identisch zur .env im Ziel
-          ENVOYER_HOOK: ${{ secrets.ENVOYER_HOOK_URL }}
-          PROD_ROOT:    ${{ secrets.PROD_ROOT_URL }}  # optional für Smoke Test nach Envoyer
+      - name: CI-.env schreiben (fix)
+        working-directory: ./craft
         run: |
           set -euo pipefail
-          DATE=$(date +%Y-%m-%d)
-          # Composer
-          composer install --no-interaction --prefer-dist --no-progress
-          cd craft
-          composer install --no-interaction --prefer-dist --no-progress
-          # CI-ENV
-          cat > .env <<'ENV'
-          CRAFT_ENVIRONMENT=ci
-          CRAFT_DB_DRIVER=mysql
-          CRAFT_DB_SERVER=127.0.0.1
-          CRAFT_DB_PORT=3306
-          CRAFT_DB_DATABASE=craft_ci
-          CRAFT_DB_USER=craft
-          CRAFT_DB_PASSWORD=secret
-          CRAFT_SECURITY_KEY=dev-$(php -r 'echo bin2hex(random_bytes(16));')
-          PRIMARY_SITE_URL=http://127.0.0.1:8081
-          CRAFT_WEB_URL=http://127.0.0.1:8081
-          ENV
+          SEC_KEY=$(php -r 'echo bin2hex(random_bytes(32));')
+          {
+            echo "CRAFT_ENVIRONMENT=ci"
+            echo "CRAFT_DB_DRIVER=mysql"
+            echo "CRAFT_DB_SERVER=127.0.0.1"
+            echo "CRAFT_DB_PORT=3306"
+            echo "CRAFT_DB_DATABASE=craft_ci"
+            echo "CRAFT_DB_USER=craft"
+            echo "CRAFT_DB_PASSWORD=secret"
+            echo "CRAFT_SECURITY_KEY=$SEC_KEY"
+            echo "PRIMARY_SITE_URL=http://127.0.0.1:8081"
+            echo "CRAFT_WEB_URL=http://127.0.0.1:8081"
+          } > .env
           # Backup optional holen
           if [ "${{ inputs.skip_backup }}" != "true" ] && [ -n "${BACKUP_URL:-}" ]; then
             mkdir -p ./backups
             curl -fsS -L -X POST "$BACKUP_URL?token=$BACKUP_TOKEN" -o ./backups/Backup.sql
             test -s ./backups/Backup.sql
           fi
-          # DB warten und importieren
-          for i in {1..60}; do mysql -h 127.0.0.1 -P 3306 -ucraft -psecret -e "SELECT 1" craft_ci && break; sleep 2; done
-          if [ -s ./backups/Backup.sql ]; then mysql -h 127.0.0.1 -P 3306 -ucraft -psecret craft_ci < ./backups/Backup.sql; fi
-          # Router für PHP-Server
-          cat > router.php <<'PHP'
-          <?php
-          $p = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-          $f = __DIR__ . '/web' . $p;
-          if ($p !== '/' && file_exists($f) && !is_dir($f)) return false;
-          require __DIR__ . '/web/index.php';
-          PHP
+          - name: Auf DB warten
+            run: |
+              for i in {1..60}; do
+                MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft -e "SELECT 1" craft_ci && exit 0
+                sleep 2
+              done
+              echo "DB nicht erreichbar"; exit 1
+          
+          - name: SQL importieren (falls vorhanden)
+            working-directory: ./craft
+            run: |
+              if [ -s ./backups/Backup.sql ]; then
+                MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft craft_ci < ./backups/Backup.sql
+              else
+                echo "Kein Backup.sql gefunden, fahre ohne Import fort."
+              fi
           # Pre-Health
           php -d display_errors=0 -S 127.0.0.1:8081 -t web router.php >/tmp/php_server.log 2>&1 & echo $! > /tmp/php_pid
           for i in {1..60}; do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/ || true); [ "$c" = "200" -o "$c" = "302" -o "$c" = "401" -o "$c" = "403" ] && break; sleep 1; done
