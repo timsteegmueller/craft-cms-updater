@@ -1,0 +1,44 @@
+# .github/workflows/craft-prod-health-test-insecure.yml
+name: craft-prod-health-test-insecure
+
+on:
+  workflow_dispatch:
+    inputs:
+      envoyer: { description: "Envoyer ausführen", type: boolean, default: false }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-health-test
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROD_HEALTH_URL: ${{ secrets.PROD_HEALTH_URL }}
+      PROD_ROOT_URL:  ${{ secrets.PROD_ROOT_URL }}
+      ENVOYER_HOOK:   ${{ secrets.ENVOYER_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Health prüfen mit pseudo SSL
+        run: |
+          curl --fail --silent --show-error -L -k "$PROD_HEALTH_URL" | jq -e '.status=="ok"'
+          test "$(curl --fail --silent --show-error -L -k -o /dev/null -w "%{http_code}\n" "$PROD_ROOT_URL")" = "200"
+
+      - name: Optional Envoyer
+        if: ${{ inputs.envoyer == true || inputs.envoyer == 'true' }}
+        run: |
+          curl --fail --silent --show-error -k --retry 3 -X POST "$ENVOYER_HOOK"
+
+      - name: Fertig
+        run: echo "Prod Health Test ok"
