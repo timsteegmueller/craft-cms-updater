@@ -1,178 +1,184 @@
-name: Craft CMS Test (mit Backup DB)
+name: craft-test
 
 on:
   workflow_dispatch:
     inputs:
-      backup_file:
-        description: 'Backup file name (from base project)'
-        type: string
-        default: 'craft-backup-2025-08-01-143321.sql'
-      dry_run:
-        description: 'Dry run only'
+      env:
+        description: 'Zielumgebung'
+        type: choice
+        options: [base, staging, production]
+        default: base
+      task:
+        description: 'Aktion'
+        type: choice
+        options: [both, update, backup]
+        default: both
+      skip_backup:
+        description: 'DB-Backup überspringen'
         type: boolean
         default: false
-        
-  repository_dispatch:
-    types: [craft-test-update]
+      prepare_pr:
+        description: 'PR mit composer.lock erstellen'
+        type: boolean
+        default: true
+      envoyer_hook_url:
+        description: 'Optional: Envoyer Deploy Hook URL'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: craft-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test-with-real-data:
+  run:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    
-    services:
-      mysql:
-        image: mariadb:10.5
-        env:
-          MYSQL_ROOT_PASSWORD: secret
-          MYSQL_DATABASE: craft_local
-          MYSQL_USER: craft
-          MYSQL_PASSWORD: secret
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
+    timeout-minutes: 60
+    env:
+      ENV_NAME: ${{ inputs.env }}
+      TASK: ${{ inputs.task }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: mbstring, intl, zip, pdo_mysql, gd, curl
+          coverage: none
           tools: composer
 
-      - name: Install Dependencies
-        working-directory: ./craft
+      - name: Install jq
         run: |
-          composer install --no-interaction --optimize-autoloader --prefer-dist
+          sudo apt-get update
+          sudo apt-get install -y jq
 
-      - name: Setup Environment
+      - name: Composer install
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: URLs für die Umgebung setzen
+        run: |
+          case "${{ inputs.env }}" in
+            base)
+              echo "HEALTH_URL=http://farbcode-base.test/cms/health.php?token=${{ secrets.HEALTH_TOKEN }}" >> $GITHUB_ENV
+              echo "ROOT_URL=http://farbcode-base.test/" >> $GITHUB_ENV
+              ;;
+            *)
+              # Platzhalter für weitere Umgebungen
+              echo "HEALTH_URL=${{ secrets.HEALTH_URL_OTHER }}" >> $GITHUB_ENV
+              echo "ROOT_URL=${{ secrets.ROOT_URL_OTHER }}" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Pre-Health
+        run: |
+          curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
+
+      - name: DB-Backup
+        if: ${{ inputs.skip_backup != true && inputs.task != 'update' }}
         working-directory: ./craft
         run: |
-          if [ ! -f .env ]; then
-            cp .env.example.dev .env
-            echo "CRAFT_SECURITY_KEY=$(openssl rand -base64 32)" >> .env
-            echo "CRAFT_APP_ID=craft-$(openssl rand -hex 8)" >> .env
+          TS=$(date +%Y-%m-%d_%H-%M-%S)
+          php craft db/backup ../backups/db_$TS.sql
+          gzip -f ../backups/db_$TS.sql
+
+      - name: Craft Update
+        if: ${{ inputs.task != 'backup' }}
+        working-directory: ./craft
+        run: |
+          set -e
+          php craft update all --interactive=0
+          php craft project-config/apply --interactive=0
+          php craft migrate/all --interactive=0
+
+      - name: Post-Health
+        run: |
+          curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
+
+      - name: Root-200
+        run: |
+          curl -sS -o /dev/null -w "%{http_code}\n" "$ROOT_URL" | grep -q '^200$'
+
+      - name: PR mit composer.lock
+        if: ${{ inputs.prepare_pr == true && inputs.task != 'backup' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(update): Craft und Composer aktualisiert"
+          title: "Update ${{ github.repository }} ${{ github.run_id }}"
+          branch: update/${{ github.run_id }}-${{ github.run_number }}
+          labels: dependencies, craft-update
+          body: |
+            Automatisches Update. Bitte prüfen und mergen.
+
+      - name: Envoyer deploy
+        if: ${{ success() && inputs.env == 'production' && inputs.envoyer_hook_url != '' }}
+        run: |
+          curl -fsS -X POST "${{ inputs.envoyer_hook_url }}"
+
+  n8n-notify:
+    if: ${{ always() }}
+    needs: [run]
+    runs-on: ubuntu-latest
+    env:
+      N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
+      N8N_WEBHOOK_SECRET: ${{ secrets.N8N_WEBHOOK_SECRET }}
+      ENV_NAME: ${{ inputs.env }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
+
+      - name: Composer install
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Changelog aus "composer outdated"
+        id: cl
+        run: |
+          composer outdated --direct --format=json > /tmp/outdated.json || true
+          if [ -s /tmp/outdated.json ]; then
+            jq -r '.installed[]? | "- \(.name) \(.version) → \(.latest)"' /tmp/outdated.json > /tmp/changelog.md || true
           fi
-          
-          # Database config for GitHub Actions
-          echo "CRAFT_DB_SERVER=127.0.0.1" >> .env
-          echo "CRAFT_DB_PORT=3306" >> .env
-          echo "CRAFT_DB_DATABASE=craft_local" >> .env
-          echo "CRAFT_DB_USER=craft" >> .env
-          echo "CRAFT_DB_PASSWORD=secret" >> .env
-
-      - name: Restore Backup Database
-        working-directory: ./craft
-        run: |
-          echo "🗄️ Restoring real backup data..."
-          
-          # Check if backup file exists
-          BACKUP_FILE="${{ inputs.backup_file }}"
-          if [ -f "web/$BACKUP_FILE" ]; then
-            echo "✅ Found backup file: $BACKUP_FILE"
-            
-            # Import backup into test database
-            mysql -h 127.0.0.1 -u craft -psecret craft_local < "web/$BACKUP_FILE"
-            echo "✅ Backup restored successfully"
-            
-            # Verify data exists
-            TABLES=$(mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SHOW TABLES;" | wc -l)
-            echo "📊 Database contains $TABLES tables"
-            
-          else
-            echo "⚠️ Backup file not found: $BACKUP_FILE"
-            echo "Available files:"
-            ls -la web/*.sql || echo "No SQL files found"
-            
-            # Continue with empty DB for testing
-            echo "Continuing with empty database for testing..."
+          if [ ! -s /tmp/changelog.md ]; then
+            echo "No direct dependency changes detected." > /tmp/changelog.md
           fi
+          echo "md<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changelog.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Health Check with Real Data
-        working-directory: ./craft
+      - name: Payload bauen
+        id: payload
+        env:
+          RUN_RESULT: ${{ needs.run.result }}
         run: |
-          echo "🏥 Health check with real data..."
-          if [ -f web/health.php ]; then
-            php web/health.php || echo "Health check completed with warnings"
-          fi
-          
-          # Check Craft can access the restored data
-          php craft info || echo "Craft info not available"
+          STATUS="${RUN_RESULT:-unknown}"
+          CHANGELOG="$(cat /tmp/changelog.md || echo 'n/a')"
+          jq -n --arg client "${{ github.repository }}" \
+                --arg env "$ENV_NAME" \
+                --arg status "$STATUS" \
+                --arg changelog_md "$CHANGELOG" \
+                '{client:$client, env:$env, status:$status, changelog_md:$changelog_md}' > /tmp/payload.json
+          cat /tmp/payload.json
 
-      - name: Test Update Process
-        working-directory: ./craft
+      - name: An n8n melden
+        if: ${{ env.N8N_WEBHOOK_URL != '' }}
         run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "🧪 Dry run - showing available updates with real data"
-            php craft update/info || echo "Update info not available"
-            
-            # Show some data stats
-            echo "📊 Testing with real data:"
-            mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SELECT COUNT(*) as entries FROM craft_entries;" || echo "No entries table"
-            mysql -h 127.0.0.1 -u craft -psecret craft_local -e "SELECT COUNT(*) as users FROM craft_users;" || echo "No users table"
-            
-          else
-            echo "⬆️ Running update with real data context..."
-            
-            # Create backup of current state
-            php craft db/backup "storage/backups/pre-update-$(date +%Y%m%d-%H%M%S).sql" || echo "Backup failed"
-            
-            # Run updates
-            php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
-            composer update --no-interaction || echo "Composer update completed"
-            
-            # Clear caches with real data
-            php craft clear-caches/all || echo "Cache clear completed"
-            
-            # Test with real data
-            echo "🧪 Testing updated system with real data..."
-            php craft info || echo "Post-update info not available"
-          fi
-
-      - name: Generate Test Report
-        run: |
-          echo "📊 Test Report with Real Data:"
-          echo "================================"
-          echo "Backup used: ${{ inputs.backup_file }}"
-          echo "Test mode: ${{ inputs.dry_run && 'Dry Run' || 'Full Update' }}"
-          echo "Database: MariaDB with restored backup"
-          echo "Time: $(date)"
-          
-          # GitHub Actions Summary
-          cat >> $GITHUB_STEP_SUMMARY << EOF
-          ## 🧪 Craft CMS Test Report
-          
-          **Test Configuration:**
-          - Backup File: \`${{ inputs.backup_file }}\`
-          - Mode: ${{ inputs.dry_run && '🧪 Dry Run' || '⬆️ Full Update' }}
-          - Database: MariaDB with real backup data
-          
-          **Test Results:**
-          - Environment Setup: ✅
-          - Backup Restore: ✅
-          - Update Process: ✅
-          - Health Checks: ✅
-          
-          **Key Benefits:**
-          - Tests with REAL data from base project
-          - Validates updates against actual content structure
-          - Safe environment for testing breaking changes
-          - No impact on production systems
-          
-          This test simulates the exact update process that would run on customer servers.
-          EOF
-
-      - name: Cleanup
-        if: always()
-        run: |
-          echo "🧹 Test cleanup completed"
-          echo "Database and containers will be automatically destroyed"
+          SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
+          curl -fsS -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature: $SIG" \
+            --data-binary @/tmp/payload.json
