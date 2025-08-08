@@ -1,24 +1,43 @@
 name: craft-test-mini
+
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Nur anzeigen'
+        type: boolean
+        default: false
+      skip_backup:
+        description: 'DB-Backup überspringen'
+        type: boolean
+        default: true
+      prepare_pr:
+        description: 'PR erstellen'
+        type: boolean
+        default: true
   repository_dispatch:
     types: [craft-cms-updater]
-    inputs:
-      dry_run: {description: 'Nur anzeigen', type: boolean, default: false}
-      skip_backup: {description: 'DB-Backup überspringen', type: boolean, default: true}
-      prepare_pr: {description: 'PR erstellen', type: boolean, default: true}
 
-permissions: {contents: write, pull-requests: write}
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: craft-mini-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
+        with: { fetch-depth: 0 }
 
       - uses: shivammathur/setup-php@v2
-        with: {php-version: '8.2', coverage: none, tools: composer}
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
 
       - name: Composer install (root)
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -27,15 +46,33 @@ jobs:
         working-directory: ./craft
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: DB-Backup via HTTPS (.sql)
+        if: ${{ inputs.skip_backup != true }}
+        working-directory: ./craft
+        env:
+          BACKUP_URL:   ${{ secrets.BACKUP_URL }}    # z. B. https://kunde.tld/cms/backup.php
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}  # muss identisch zur .env im Projekt sein
+        run: |
+          set -euo pipefail
+          mkdir -p ../backups
+          curl --fail --silent --show-error --location \
+               -X POST -H "X-Backup-Token: $BACKUP_TOKEN" \
+               "$BACKUP_URL" -o "../backups/Backup.sql"
+          test -s ../backups/Backup.sql
+
+      - name: Backup als Artifact anhängen
+        if: ${{ inputs.skip_backup != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: craft/backups/Backup.sql
+          if-no-files-found: error
+
       - name: Run update
         working-directory: ./craft
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "Dry run"; php craft update/info || echo "No info"; exit 0
-          fi
-          if [ "${{ inputs.skip_backup }}" != "true" ]; then
-            mkdir -p ../backups
-            php craft db/backup ../backups/db_$(date +%F_%H-%M-%S).sql || echo "Backup skipped"
           fi
           echo "Updating Craft (no DB required to proceed)"
           php craft update all --interactive=0 --backup=0 || echo "Craft update warnings"
@@ -44,7 +81,7 @@ jobs:
       - name: Set PR meta
         run: echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
 
-      - name: Ensure change when no lock diff
+      - name: Fallback-Change, falls keine Lock-Diffs
         run: |
           if [ -z "$(git status --porcelain craft/composer.lock)" ]; then
             mkdir -p docs
@@ -52,54 +89,45 @@ jobs:
             git add docs/last-update.txt
           fi
 
-      - name: Ensure change
-        run: |
-          mkdir -p docs
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/last-update.txt
-  # 1) Datum für den PR-Titel
-      - name: Set PR meta
-        run: echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
-      
-      # 2) Changelog aus craft/composer.lock bauen (nur direkte Deps)
-      - name: Changelog (craft/)
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Changelog (craft/, direkte Deps)
         id: cl
         working-directory: ./craft
         run: |
           composer outdated --direct --format=json > /tmp/outdated.json || true
           jq -r '.installed[]? | "- **\(.name)** \(.version) → \(.latest)\t(\(.latest-status // "latest"))"' /tmp/outdated.json > /tmp/changelog.md || true
           [ -s /tmp/changelog.md ] || echo "No direct dependency changes." > /tmp/changelog.md
-      
-      # 3) PR-Body zusammenstellen (mit „Files changed“ und Link zum Run)
-      - name: Build PR body
+
+      - name: PR-Body bauen
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           {
-          echo "## Craft CMS Update"
-          echo
-          echo "**Date:** ${{ env.DATE }}"
-          echo "**Trigger:** ${{ github.event_name }}${{ github.event.action && format(' ({0})', github.event.action) || '' }}"
-          echo
-          echo "### Files changed"
-          echo "- craft/composer.lock – Updated dependencies"
-          if [ -n "$(git status --porcelain craft/backups | head -n1)" ]; then
-           echo "- craft/backups – New backup file"
-          fi
-          echo
-          echo "### Changelog (direct deps)"
-          cat /tmp/changelog.md
-          echo
-          echo "[View run]($RUN_URL)"
+            echo "## Craft CMS Update"
+            echo
+            echo "**Date:** ${{ env.DATE }}"
+            echo "**Trigger:** ${{ github.event_name }}${{ github.event.action && format(' ({0})', github.event.action) || '' }}"
+            echo
+            echo "### Files changed"
+            echo "- craft/composer.lock – Updated dependencies"
+            if [ -n "$(git status --porcelain craft/backups | head -n1)" ]; then
+              echo "- craft/backups – Backup.sql"
+            fi
+            echo
+            echo "### Changelog (direct deps)"
+            cat /tmp/changelog.md
+            echo
+            echo "[View run]($RUN_URL)"
           } > PR_BODY.md
-    
-    
+
       - name: Create Pull Request
+        if: ${{ inputs.prepare_pr == true || inputs.prepare_pr == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
-                token: ${{ secrets.GITHUB_TOKEN }}
-                branch: update/${{ env.DATE }}-${{ github.run_number }}
-                delete-branch: true
-                commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
-                title: "Craft deps update ${{ env.DATE }}"
-                body-path: PR_BODY.md
-
-
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/${{ env.DATE }}-${{ github.run_number }}
+          delete-branch: true
+          commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
+          title: "Craft deps update ${{ env.DATE }}"
+          body-path: PR_BODY.md
