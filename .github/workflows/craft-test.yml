@@ -92,18 +92,31 @@ jobs:
           } > PR_BODY.md
     
     
-      - name: Create PR
-        if: ${{ inputs.prepare_pr || inputs.prepare_pr == 'true' }}
-        uses: peter-evans/create-pull-request@v6
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
         with:
-          add-paths: |
-            craft/composer.lock
-            # optional: craft/backups/**   # nur anhängen, wenn du Backups mitcommitten willst
-          body-path: PR_BODY.md
-          commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
-          title: "Craft deps update ${{ env.DATE }}"
-          branch: update/${{ env.DATE }}-${{ github.run_number }}
-          labels: craft-update, dependencies
+                token: ${{ secrets.GITHUB_TOKEN }}
+                branch: update/craft-run-${{ github.run_number }}
+                delete-branch: true
+                commit-message: Update Craft CMS dependencies - Run ${{ github.run_number }}
+                title: Craft CMS Update - Run ${{ github.run_number }}
+                body: |
+                  ## Craft CMS Update
+                  
+                  **Details:**
+                  - Backup created: ${{ !inputs.skip_backup && '✅' || '⏭️' }}
+                  - Dry run: ${{ inputs.dry_run && '🧪' || '✅' }}
+                  - Trigger: ${{ github.event_name }}
+                  - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+                  
+                  **Files changed:**
+                  - `craft/composer.lock` - Updated dependencies
+                  - `craft/storage/backups/` - New backup file
+                  
+                  **Next steps:**
+                  - Review changes
+                  - Test on staging
+                  - Merge for production deployment
 
 
 
