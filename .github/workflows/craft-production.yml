@@ -1,3 +1,16 @@
+name: craft-mini
+
+on:
+    workflow_dispatch:
+        inputs:
+            dry_run:     { description: 'Nur anzeigen', type: boolean, default: false }
+            skip_backup: { description: 'Backup ziehen',   type: boolean, default: false }
+            envoyer:     { description: 'Envoyer deploy',  type: boolean, default: false }
+
+permissions: { contents: write, pull-requests: write }
+
+
+
 jobs:
   run:
     runs-on: ubuntu-latest
