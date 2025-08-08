@@ -45,7 +45,6 @@ jobs:
             - name: Composer install (craft)
               working-directory: ./craft
               run: composer install --no-interaction --prefer-dist --no-progress
-
             - name: DB-Backup via HTTPS (.sql)
               if: ${{ inputs.skip_backup != true }}
               working-directory: ./craft
@@ -60,14 +59,16 @@ jobs:
                        -o "./backups/Backup.sql"
                   test -s ./backups/Backup.sql
                   ls -lah ./backups
-
-                - name: Backup als Artifact anhängen
-                  if: ${{ inputs.skip_backup != true }}
-                  uses: actions/upload-artifact@v4
-                  with:
-                      name: db-backup-${{ github.run_id }}
+        
+            - name: Backup als Artifact anhängen
+              if: ${{ inputs.skip_backup != true }}
+              uses: actions/upload-artifact@v4
+              with:
+                  name: db-backup-${{ github.run_id }}
                   path: craft/backups/Backup.sql
-                    if-no-files-found: error
+                  if-no-files-found: error
+              
+
 
             - name: Run update
               working-directory: ./craft
