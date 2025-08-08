@@ -1,134 +1,136 @@
 name: craft-backup-and-deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      env:
-        description: 'Ziel'
-        type: choice
-        options: [base, staging, production]
-        default: production
-      envoyer:
-        description: 'Envoyer ausführen'
-        type: boolean
-        default: true
-      skip_backup:
-        description: 'Backup überspringen'
-        type: boolean
-        default: false
+    workflow_dispatch:
+        inputs:
+            env:
+                description: 'Ziel'
+                type: choice
+                options: [base, staging, production]
+                default: production
+            envoyer:
+                description: 'Envoyer ausführen'
+                type: boolean
+                default: true
+            skip_backup:
+                description: 'Backup überspringen'
+                type: boolean
+                default: false
 
 permissions:
-  contents: read
+    contents: read
 
 concurrency:
-  group: deploy-${{ inputs.env }}
-  cancel-in-progress: true
+    group: deploy-${{ inputs.env }}
+    cancel-in-progress: true
 
 jobs:
-  go:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    go:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq openssh-client
+            - name: Tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y jq openssh-client
 
-      - name: Umgebungswerte setzen
-        id: env
-        run: |
-          case "${{ inputs.env }}" in
-            base)
-              echo "SSH_HOST=${{ secrets.BASE_SSH_HOST }}" >> $GITHUB_ENV
-              echo "SSH_USER=${{ secrets.BASE_SSH_USER }}" >> $GITHUB_ENV
-              echo "PROJECT_PATH=${{ secrets.BASE_PROJECT_PATH }}" >> $GITHUB_ENV
-              echo "HEALTH_URL=${{ secrets.BASE_HEALTH_URL }}" >> $GITHUB_ENV
-              echo "ROOT_URL=${{ secrets.BASE_ROOT_URL }}" >> $GITHUB_ENV
-              echo "ENVOYER_HOOK=${{ secrets.BASE_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
-              ;;
-            staging)
-              echo "SSH_HOST=${{ secrets.STAGE_SSH_HOST }}" >> $GITHUB_ENV
-              echo "SSH_USER=${{ secrets.STAGE_SSH_USER }}" >> $GITHUB_ENV
-              echo "PROJECT_PATH=${{ secrets.STAGE_PROJECT_PATH }}" >> $GITHUB_ENV
-              echo "HEALTH_URL=${{ secrets.STAGE_HEALTH_URL }}" >> $GITHUB_ENV
-              echo "ROOT_URL=${{ secrets.STAGE_ROOT_URL }}" >> $GITHUB_ENV
-              echo "ENVOYER_HOOK=${{ secrets.STAGE_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
-              ;;
-            production)
-              echo "SSH_HOST=${{ secrets.PROD_SSH_HOST }}" >> $GITHUB_ENV
-              echo "SSH_USER=${{ secrets.PROD_SSH_USER }}" >> $GITHUB_ENV
-              echo "PROJECT_PATH=${{ secrets.PROD_PROJECT_PATH }}" >> $GITHUB_ENV
-              echo "HEALTH_URL=${{ secrets.PROD_HEALTH_URL }}" >> $GITHUB_ENV
-              echo "ROOT_URL=${{ secrets.PROD_ROOT_URL }}" >> $GITHUB_ENV
-              echo "ENVOYER_HOOK=${{ secrets.PROD_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
-              ;;
-          esac
-          echo "TS=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
+            - name: Umgebungswerte setzen
+              id: env
+              run: |
+                  case "${{ inputs.env }}" in
+                    base)
+                      echo "SSH_HOST=${{ secrets.BASE_SSH_HOST }}" >> $GITHUB_ENV
+                      echo "SSH_USER=${{ secrets.BASE_SSH_USER }}" >> $GITHUB_ENV
+                      echo "PROJECT_PATH=${{ secrets.BASE_PROJECT_PATH }}" >> $GITHUB_ENV
+                      echo "HEALTH_URL=${{ secrets.BASE_HEALTH_URL }}" >> $GITHUB_ENV
+                      echo "ROOT_URL=${{ secrets.BASE_ROOT_URL }}" >> $GITHUB_ENV
+                      echo "ENVOYER_HOOK=${{ secrets.BASE_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
+                      ;;
+                    staging)
+                      echo "SSH_HOST=${{ secrets.STAGE_SSH_HOST }}" >> $GITHUB_ENV
+                      echo "SSH_USER=${{ secrets.STAGE_SSH_USER }}" >> $GITHUB_ENV
+                      echo "PROJECT_PATH=${{ secrets.STAGE_PROJECT_PATH }}" >> $GITHUB_ENV
+                      echo "HEALTH_URL=${{ secrets.STAGE_HEALTH_URL }}" >> $GITHUB_ENV
+                      echo "ROOT_URL=${{ secrets.STAGE_ROOT_URL }}" >> $GITHUB_ENV
+                      echo "ENVOYER_HOOK=${{ secrets.STAGE_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
+                      ;;
+                    production)
+                      echo "SSH_HOST=${{ secrets.PROD_SSH_HOST }}" >> $GITHUB_ENV
+                      echo "SSH_USER=${{ secrets.PROD_SSH_USER }}" >> $GITHUB_ENV
+                      echo "PROJECT_PATH=${{ secrets.PROD_PROJECT_PATH }}" >> $GITHUB_ENV
+                      echo "HEALTH_URL=${{ secrets.PROD_HEALTH_URL }}" >> $GITHUB_ENV
+                      echo "ROOT_URL=${{ secrets.PROD_ROOT_URL }}" >> $GITHUB_ENV
+                      echo "ENVOYER_HOOK=${{ secrets.PROD_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
+                      ;;
+                  esac
+                  echo "TS=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
 
-      - name: SSH key laden
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ inputs.env == 'production' && secrets.PROD_SSH_KEY || '' }}
-            ${{ inputs.env == 'staging' && secrets.STAGE_SSH_KEY || '' }}
-            ${{ inputs.env == 'base' && secrets.BASE_SSH_KEY || '' }}
+            - name: SSH key laden
+              uses: webfactory/ssh-agent@v0.9.0
+              with:
+                  ssh-private-key: |
+                      ${{ inputs.env == 'production' && secrets.PROD_SSH_KEY || '' }}
+                      ${{ inputs.env == 'staging' && secrets.STAGE_SSH_KEY || '' }}
+                      ${{ inputs.env == 'base' && secrets.BASE_SSH_KEY || '' }}
 
-      - name: Hostkey trusten
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+            - name: Hostkey trusten
+              run: |
+                  mkdir -p ~/.ssh
+                  ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Pre-Health
-        if: ${{ env.HEALTH_URL != '' }}
-        run: |
-          curl --fail --silent --show-error "$HEALTH_URL" | jq -e '.status=="ok"'
+            - name: Pre-Health
+              if: ${{ env.HEALTH_URL != '' }}
+              run: |
+                  curl --fail --silent --show-error "$HEALTH_URL" | jq -e '.status=="ok"'
 
-      - name: DB-Backup remote
-        if: ${{ inputs.skip_backup != 'true' }}
-        run: |
-          ssh "$SSH_USER@$SSH_HOST" "set -euo pipefail
-            cd '$PROJECT_PATH'
-            mkdir -p storage/backups
-            php craft db/backup storage/backups/db_${TS}.sql
-            gzip -f storage/backups/db_${TS}.sql
-            echo storage/backups/db_${TS}.sql.gz" | tee remote_path.txt
-          mkdir -p "backups/${{ inputs.env }}"
-          scp "$SSH_USER@$SSH_HOST:$(cat remote_path.txt)" "backups/${{ inputs.env }}/"
+            - name: DB-Backup remote
+              if: ${{ inputs.skip_backup != 'true' }}
+              run: |
+                  ssh "$SSH_USER@$SSH_HOST" "set -euo pipefail
+                    cd '$PROJECT_PATH'
+                    mkdir -p storage/backups
+                    php craft db/backup storage/backups/db_${TS}.sql
+                    gzip -f storage/backups/db_${TS}.sql
+                    echo storage/backups/db_${TS}.sql.gz" | tee remote_path.txt
+                  mkdir -p "backups/${{ inputs.env }}"
+                  scp "$SSH_USER@$SSH_HOST:$(cat remote_path.txt)" "backups/${{ inputs.env }}/"
 
-      - name: Backup als Artifact
-        if: ${{ inputs.skip_backup != 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-backup-${{ inputs.env }}-${{ env.TS }}
-          path: backups/${{ inputs.env }}/*.sql.gz
-          if-no-files-found: ignore
+            - name: Backup als Artifact
+              if: ${{ inputs.skip_backup != 'true' }}
+              uses: actions/upload-artifact@v4
+              with:
+                  name: db-backup-${{ inputs.env }}-${{ env.TS }}
+                  path: backups/${{ inputs.env }}/*.sql.gz
+                  if-no-files-found: ignore
 
-      - name: Envoyer deploy
-        if: ${{ inputs.envoyer || inputs.envoyer == 'true' }}
-        run: |
-          if [ -n "$ENVOYER_HOOK" ]; then
-            curl --fail --silent --show-error --retry 3 -X POST "$ENVOYER_HOOK"
-          else
-            echo "ENVOYER_HOOK leer, überspringe"
-          fi
+            - name: Envoyer deploy
+              if: ${{ inputs.envoyer || inputs.envoyer == 'true' }}
+              run: |
+                  if [ -n "$ENVOYER_HOOK" ]; then
+                    curl --fail --silent --show-error --retry 3 -X POST "$ENVOYER_HOOK"
+                  else
+                    echo "ENVOYER_HOOK leer, überspringe"
+                  fi
 
-      - name: Warten bis gesund
-        if: ${{ env.HEALTH_URL != '' && env.ROOT_URL != '' }}
-        run: |
-          end=$((SECONDS+600)); ok=0
-          while [ $SECONDS -lt $end ]; do
-            if curl -fsS "$HEALTH_URL" | jq -e '.status=="ok"' >/dev/null && \
-               [ "$(curl -fsS -o /dev/null -w "%{http_code}\n" "$ROOT_URL")" = "200" ]; then
-              ok=1; break
-            fi
-            sleep 10
-          done
-          test $ok -eq 1
+            - name: Warten bis gesund
+              if: ${{ env.HEALTH_URL != '' && env.ROOT_URL != '' }}
+              run: |
+                  end=$((SECONDS+600)); ok=0
+                  while [ $SECONDS -lt $end ]; do
+                    if curl -fsS "$HEALTH_URL" | jq -e '.status=="ok"' >/dev/null && \
+                       [ "$(curl -fsS -o /dev/null -w "%{http_code}\n" "$ROOT_URL")" = "200" ]; then
+                      ok=1; break
+                    fi
+                    sleep 10
+                  done
+                  test $ok -eq 1
+                  
+            - name: Fertig
+              run: echo "Deployment auf ${{ inputs.env }} abgeschlossen!"
 
-      - name: Done
-        run: echo "Fertig: ${{ inputs.env }} (${{ env.TS }})"
+
