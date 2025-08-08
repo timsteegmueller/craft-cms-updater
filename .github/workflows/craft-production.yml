@@ -50,14 +50,26 @@ jobs:
         if: ${{ inputs.skip_backup != true }}
         working-directory: ./craft
         env:
-          BACKUP_URL:   ${{ secrets.BACKUP_URL }}    # z. B. https://kunde.tld/cms/backup.php
-          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}  # muss identisch zur .env im Projekt sein
+          BACKUP_URL:   ${{ secrets.BACKUP_URL }}    # z. B. https://<ngrok>/cms/backup.php
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}  # identisch zur .env im Projekt
         run: |
           set -euo pipefail
           mkdir -p ../backups
+          # Token über die URL statt Header, Header machen oft Ärger über Proxies/Tunnel
           curl --fail --silent --show-error --location \
-               -X POST -H "X-Backup-Token: $BACKUP_TOKEN" \
-               "$BACKUP_URL" -o "../backups/Backup.sql"
+               --retry 5 --retry-delay 3 --connect-timeout 10 \
+               -X POST "$BACKUP_URL?token=$BACKUP_TOKEN" \
+               -D /tmp/resp.h \
+               -o "../backups/Backup.sql"
+          # Sanity-Check auf Content-Type und Inhalt
+          ctype=$(awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' /tmp/resp.h | tr -d '\r' || true)
+          echo "Content-Type: ${ctype:-unknown}"
+          if [ "${ctype:-}" != "" ] && ! echo "$ctype" | grep -q 'application/sql'; then
+            echo "::group::Response headers"; sed -n '1,50p' /tmp/resp.h || true; echo "::endgroup::"
+            echo "::group::Response body (head)"; head -n 80 ../backups/Backup.sql || true; echo "::endgroup::"
+            echo "::error::Backup hat keinen erwarteten Content-Type (application/sql)."
+            exit 1
+          fi
           test -s ../backups/Backup.sql
 
       - name: Backup als Artifact anhängen
