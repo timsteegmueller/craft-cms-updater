@@ -1,135 +1,194 @@
 name: craft-test-mini
 
 on:
-    workflow_dispatch:
-        inputs:
-            dry_run:
-                description: 'Nur anzeigen'
-                type: boolean
-                default: false
-            skip_backup:
-                description: 'DB-Backup überspringen'
-                type: boolean
-                default: true
-            prepare_pr:
-                description: 'PR erstellen'
-                type: boolean
-                default: true
-    repository_dispatch:
-        types: [craft-cms-updater]
+  workflow_dispatch:
+    inputs:
+      dry_run:      { description: 'Nur anzeigen', type: boolean, default: false }
+      skip_backup:  { description: 'DB-Backup per HTTPS holen', type: boolean, default: false }
+      prepare_pr:   { description: 'PR erstellen', type: boolean, default: true }
+  repository_dispatch:
+    types: [craft-cms-updater]
 
 permissions:
-    contents: write
-    pull-requests: write
+  contents: write
+  pull-requests: write
 
 concurrency:
-    group: craft-mini-${{ github.ref }}
-    cancel-in-progress: true
+  group: craft-mini-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    run:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-              with: { fetch-depth: 0 }
+  run:
+    runs-on: ubuntu-latest
 
-            - uses: shivammathur/setup-php@v2
-              with:
-                  php-version: '8.2'
-                  coverage: none
-                  tools: composer
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: craft_ci
+          MYSQL_USER: craft
+          MYSQL_PASSWORD: secret
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot || exit 1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=60
 
-            - name: Composer install (root)
-              run: composer install --no-interaction --prefer-dist --no-progress
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-            - name: Composer install (craft)
-              working-directory: ./craft
-              run: composer install --no-interaction --prefer-dist --no-progress
-            - name: DB-Backup via HTTPS (.sql)
-              if: ${{ inputs.skip_backup != true }}
-              working-directory: ./craft
-              env:
-                  BACKUP_URL:   ${{ secrets.BACKUP_URL }}    # z. B. https://<ngrok>/cms/backup.php
-                  BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
-              run: |
-                  set -euo pipefail
-                  mkdir -p ./backups
-                  curl --fail --silent --show-error --location \
-                       -X POST "$BACKUP_URL?token=$BACKUP_TOKEN" \
-                       -o "./backups/Backup.sql"
-                  test -s ./backups/Backup.sql
-                  ls -lah ./backups
-        
-            - name: Backup als Artifact anhängen
-              if: ${{ inputs.skip_backup != true }}
-              uses: actions/upload-artifact@v4
-              with:
-                  name: db-backup-${{ github.run_id }}
-                  path: craft/backups/Backup.sql
-                  if-no-files-found: error
-              
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
 
+      - name: Composer install (root)
+        run: composer install --no-interaction --prefer-dist --no-progress
 
-            - name: Run update
-              working-directory: ./craft
-              run: |
-                  if [ "${{ inputs.dry_run }}" = "true" ]; then
-                    echo "Dry run"; php craft update/info || echo "No info"; exit 0
-                  fi
-                  echo "Updating Craft (no DB required to proceed)"
-                  php craft update all --interactive=0 --backup=0 || echo "Craft update warnings"
-                  composer update --no-interaction --no-progress || echo "Composer update warnings"
+      - name: Composer install (craft)
+        working-directory: ./craft
+        run: composer install --no-interaction --prefer-dist --no-progress
 
-            - name: Set PR meta
-              run: echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+      # Optional: Backup vom Zielsystem via HTTPS holen (Tunnel/öffentliche URL)
+      - name: DB-Backup via HTTPS (.sql)
+        if: ${{ inputs.skip_backup != true }}
+        working-directory: ./craft
+        env:
+          BACKUP_URL:   ${{ secrets.BACKUP_URL }}    # z. B. https://<tunnel>/cms/backup.php
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}  # identisch zur .env des Projekts
+        run: |
+          set -euo pipefail
+          mkdir -p ./backups
+          curl --fail --silent --show-error --location \
+               -X POST "$BACKUP_URL?token=$BACKUP_TOKEN" \
+               -o "./backups/Backup.sql"
+          test -s ./backups/Backup.sql
 
-            - name: Fallback-Change, falls keine Lock-Diffs
-              run: |
-                  if [ -z "$(git status --porcelain craft/composer.lock)" ]; then
-                    mkdir -p docs
-                    date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/last-update.txt
-                    git add docs/last-update.txt
-                  fi
+      - name: MariaDB Client installieren
+        run: sudo apt-get update && sudo apt-get install -y mariadb-client jq
 
-            - name: Install jq
-              run: sudo apt-get update && sudo apt-get install -y jq
+      - name: CI-.env für Craft schreiben
+        working-directory: ./craft
+        run: |
+          cat > .env <<'ENV'
+          CRAFT_ENVIRONMENT=ci
+          CRAFT_DB_DRIVER=mysql
+          CRAFT_DB_SERVER=127.0.0.1
+          CRAFT_DB_PORT=3306
+          CRAFT_DB_DATABASE=craft_ci
+          CRAFT_DB_USER=craft
+          CRAFT_DB_PASSWORD=secret
+          CRAFT_SECURITY_KEY=$(php -r 'echo bin2hex(random_bytes(32));')
+          PRIMARY_SITE_URL=http://127.0.0.1:8080
+          CRAFT_WEB_URL=http://127.0.0.1:8080
+          ENV
 
-            - name: Changelog (craft/, direkte Deps)
-              id: cl
-              working-directory: ./craft
-              run: |
-                  composer outdated --direct --format=json > /tmp/outdated.json || true
-                  jq -r '.installed[]? | "- **\(.name)** \(.version) → \(.latest)\t(\(.latest-status // "latest"))"' /tmp/outdated.json > /tmp/changelog.md || true
-                  [ -s /tmp/changelog.md ] || echo "No direct dependency changes." > /tmp/changelog.md
+      - name: Warten bis DB bereit
+        run: |
+          for i in {1..60}; do
+            mysql -h 127.0.0.1 -P 3306 -ucraft -psecret -e "SELECT 1" craft_ci && exit 0
+            sleep 2
+          done
+          echo "DB nicht erreichbar"; exit 1
 
-            - name: PR-Body bauen
-              run: |
-                  RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  {
-                    echo "## Craft CMS Update"
-                    echo
-                    echo "**Date:** ${{ env.DATE }}"
-                    echo "**Trigger:** ${{ github.event_name }}${{ github.event.action && format(' ({0})', github.event.action) || '' }}"
-                    echo
-                    echo "### Files changed"
-                    echo "- craft/composer.lock – Updated dependencies"
-                    if [ -n "$(git status --porcelain craft/backups | head -n1)" ]; then
-                      echo "- craft/backups – Backup.sql"
-                    fi
-                    echo
-                    echo "### Changelog (direct deps)"
-                    cat /tmp/changelog.md
-                    echo
-                    echo "[View run]($RUN_URL)"
-                  } > PR_BODY.md
+      - name: SQL importieren (falls vorhanden)
+        working-directory: ./craft
+        run: |
+          if [ -s ./backups/Backup.sql ]; then
+            mysql -h 127.0.0.1 -P 3306 -ucraft -psecret craft_ci < ./backups/Backup.sql
+          else
+            echo "Kein Backup.sql gefunden, fahre ohne Import fort."
+          fi
 
-            - name: Create Pull Request
-              if: ${{ inputs.prepare_pr == true || inputs.prepare_pr == 'true' }}
-              uses: peter-evans/create-pull-request@v6
-              with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
-                  branch: update/${{ env.DATE }}-${{ github.run_number }}
-                  delete-branch: true
-                  commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
-                  title: "Craft deps update ${{ env.DATE }}"
-                  body-path: PR_BODY.md
+      - name: Pre-Health (lokaler PHP-Server)
+        working-directory: ./craft
+        run: |
+          php -S 127.0.0.1:8080 -t web >/dev/null 2>&1 & echo $! > /tmp/php_pid
+          # kurze Wartezeit
+          for i in {1..30}; do curl -fsS -o /dev/null http://127.0.0.1:8080/ && break; sleep 1; done
+          curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/ | grep -q '^200$'
+
+      - name: Update fahren (Craft + Composer)
+        working-directory: ./craft
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Dry run"; php craft update/info || echo "No info"; exit 0
+          fi
+          php craft migrate/all || true
+          php craft project-config/apply --interactive=0 || true
+          php craft update all --interactive=0 --backup=0 || echo "Craft update warnings"
+          composer update --no-interaction --no-progress || echo "Composer update warnings"
+
+      - name: Post-Health (lokaler PHP-Server)
+        run: |
+          # Server läuft noch
+          curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/ | grep -q '^200$'
+          # Server aufräumen
+          kill "$(cat /tmp/php_pid)" || true
+
+      - name: PR-Metadatum
+        run: echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+
+      - name: Fallback-Change, falls keine Lock-Diffs
+        run: |
+          if [ -z "$(git status --porcelain craft/composer.lock)" ]; then
+            mkdir -p docs
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/last-update.txt
+            git add docs/last-update.txt
+          fi
+
+      - name: Changelog (craft/, direkte Deps)
+        id: cl
+        working-directory: ./craft
+        run: |
+          composer outdated --direct --format=json > /tmp/outdated.json || true
+          jq -r '.installed[]? | "- **\(.name)** \(.version) → \(.latest)\t(\(.latest-status // "latest"))"' /tmp/outdated.json > /tmp/changelog.md || true
+          [ -s /tmp/changelog.md ] || echo "No direct dependency changes." > /tmp/changelog.md
+
+      - name: PR-Body bauen
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+            echo "## Craft CMS Update (CI-Health vor/nach Update geprüft)"
+            echo
+            echo "**Date:** ${{ env.DATE }}"
+            echo
+            echo "### Files changed"
+            if [ -n "$(git status --porcelain craft/composer.lock)" ]; then
+              echo "- craft/composer.lock – Updated dependencies"
+            fi
+            if [ -n "$(git status --porcelain craft/composer.json)" ]; then
+              echo "- craft/composer.json – Updated constraints"
+            fi
+            if [ -s craft/backups/Backup.sql ]; then
+              echo "- craft/backups – Backup.sql (nicht committed, nur im Run/Artifact)"
+            fi
+            echo
+            echo "### Changelog (direct deps)"
+            cat /tmp/changelog.md
+            echo
+            echo "[View run]($RUN_URL)"
+          } > PR_BODY.md
+
+      - name: Create Pull Request
+        if: ${{ inputs.prepare_pr == true || inputs.prepare_pr == 'true' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/${{ env.DATE }}-${{ github.run_number }}
+          delete-branch: true
+          commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
+          title: "Craft deps update ${{ env.DATE }}"
+          body-path: PR_BODY.md
+
+      - name: Backup als Artifact anhängen
+        if: ${{ inputs.skip_backup != true && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: craft/backups/Backup.sql
+          if-no-files-found: warn
