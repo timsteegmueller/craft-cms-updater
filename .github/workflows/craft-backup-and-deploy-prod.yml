@@ -83,7 +83,7 @@ jobs:
                   else
                     echo "CURL_OPTS=--fail --silent --show-error --max-time 20 -L" >> $GITHUB_ENV
                   fi
-            
+
             # ssh-agent je Umgebung, damit keine leeren Keys übergeben werden
             - name: ssh-agent base
               if: ${{ inputs.env == 'base' }}
@@ -107,12 +107,14 @@ jobs:
               run: |
                   mkdir -p ~/.ssh
                   ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
-            
+
             # robust: skip_health akzeptiert Boolean oder String
-            - name: Pre-Health
-              if: ${{ ! (inputs.skip_health == true || inputs.skip_health == 'true') && env.HEALTH_URL != '' }}
+    # Pre-Health (remote)
+            - name: Pre-Health (remote)
+              if: ${{ env.HEALTH_URL != '' }}
               run: |
-                  curl $CURL_OPTS "$HEALTH_URL" | jq -e '.status=="ok"'
+                  ssh "$SSH_USER@$SSH_HOST" \
+                    "curl -fsSL -k '$HEALTH_URL' | jq -e '.status==\"ok\"'"
 
             - name: DB-Backup remote
               if: ${{ ! (inputs.skip_backup == true || inputs.skip_backup == 'true') }}
@@ -143,18 +145,17 @@ jobs:
                     echo "ENVOYER_HOOK leer, überspringe"
                   fi
 
-            - name: Warten bis gesund
-              if: ${{ ! (inputs.skip_health == true || inputs.skip_health == 'true') && env.HEALTH_URL != '' && env.ROOT_URL != '' }}
+            - name: Warten bis gesund (remote)
+              if: ${{ env.HEALTH_URL != '' && env.ROOT_URL != '' }}
               run: |
-                  end=$((SECONDS+600)); ok=0
-                  while [ $SECONDS -lt $end ]; do
-                    if curl $CURL_OPTS "$HEALTH_URL" | jq -e '.status=="ok"' >/dev/null && \
-                       [ "$(curl $CURL_OPTS -o /dev/null -w "%{http_code}\n" "$ROOT_URL")" = "200" ]; then
-                      ok=1; break
-                    fi
-                    sleep 10
-                  done
-                  test $ok -eq 1
-
+                    end=$((SECONDS+600)); ok=0
+                    while [ $SECONDS -lt $end ]; do
+                      if ssh "$SSH_USER@$SSH_HOST" "curl -fsSL -k '$HEALTH_URL' | jq -e '.status==\"ok\"' >/dev/null" && \
+                         [ "$(ssh "$SSH_USER@$SSH_HOST" "curl -fsSL -o /dev/null -w '%{http_code}\n' -k '$ROOT_URL'")" = "200" ]; then
+                        ok=1; break
+                      fi
+                      sleep 10
+                    done
+                    test $ok -eq 1
             - name: Done
               run: echo "Deployment to ${{ inputs.env }} completed successfully!"
