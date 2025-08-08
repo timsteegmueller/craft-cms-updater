@@ -1,14 +1,3 @@
-name: craft-mini
-
-on:
-  workflow_dispatch:
-    inputs:
-      dry_run:     { description: 'Nur anzeigen', type: boolean, default: false }
-      skip_backup: { description: 'Backup ziehen',   type: boolean, default: false }
-      envoyer:     { description: 'Envoyer deploy',  type: boolean, default: false }
-
-permissions: { contents: write, pull-requests: write }
-
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -37,10 +26,22 @@ jobs:
           extensions: mbstring, intl, pdo_mysql, gd, exif, fileinfo, zip, xml, curl, sodium
           ini-values: memory_limit=-1
 
-      - name: CI-.env schreiben (fix)
-        working-directory: ./craft
+      - name: CI Pipeline kompakt
+        env:
+          BACKUP_URL:   ${{ secrets.BACKUP_URL }}     # z. B. https://<tunnel>/cms/backup.php
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+          ENVOYER_HOOK: ${{ secrets.ENVOYER_HOOK_URL }}
+          PROD_ROOT:    ${{ secrets.PROD_ROOT_URL }}
         run: |
           set -euo pipefail
+          DATE=$(date +%Y-%m-%d)
+
+          # Composer
+          composer install --no-interaction --prefer-dist --no-progress
+          cd craft
+          composer install --no-interaction --prefer-dist --no-progress
+
+          # .env schreiben (ohne Shell-Expansions in der Datei)
           SEC_KEY=$(php -r 'echo bin2hex(random_bytes(32));')
           {
             echo "CRAFT_ENVIRONMENT=ci"
@@ -54,53 +55,49 @@ jobs:
             echo "PRIMARY_SITE_URL=http://127.0.0.1:8081"
             echo "CRAFT_WEB_URL=http://127.0.0.1:8081"
           } > .env
-          # Backup optional holen
+
+          # Optional: Backup ziehen
           if [ "${{ inputs.skip_backup }}" != "true" ] && [ -n "${BACKUP_URL:-}" ]; then
             mkdir -p ./backups
             curl -fsS -L -X POST "$BACKUP_URL?token=$BACKUP_TOKEN" -o ./backups/Backup.sql
             test -s ./backups/Backup.sql
           fi
-          - name: Auf DB warten
-            run: |
-              for i in {1..60}; do
-                MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft -e "SELECT 1" craft_ci && exit 0
-                sleep 2
-              done
-              echo "DB nicht erreichbar"; exit 1
-          
-          - name: SQL importieren (falls vorhanden)
-            working-directory: ./craft
-            run: |
-              if [ -s ./backups/Backup.sql ]; then
-                MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft craft_ci < ./backups/Backup.sql
-              else
-                echo "Kein Backup.sql gefunden, fahre ohne Import fort."
-              fi
+
+          # DB warten und ggf. SQL importieren
+          for i in {1..60}; do MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft -e "SELECT 1" craft_ci && break; sleep 2; done
+          if [ -s ./backups/Backup.sql ]; then MYSQL_PWD=secret mysql -h 127.0.0.1 -P 3306 -ucraft craft_ci < ./backups/Backup.sql; fi
+
+          # Router für PHP-Server
+          cat > router.php <<'PHP'
+          <?php
+          $p = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+          $f = __DIR__ . '/web' . $p;
+          if ($p !== '/' && file_exists($f) && !is_dir($f)) return false;
+          require __DIR__ . '/web/index.php';
+          PHP
+
           # Pre-Health
           php -d display_errors=0 -S 127.0.0.1:8081 -t web router.php >/tmp/php_server.log 2>&1 & echo $! > /tmp/php_pid
-          for i in {1..60}; do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/ || true); [ "$c" = "200" -o "$c" = "302" -o "$c" = "401" -o "$c" = "403" ] && break; sleep 1; done
+          for i in {1..60}; do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/ || true); [[ "$c" =~ ^(200|302|401|403)$ ]] && break; sleep 1; done
           [ "${c:-}" != "" ] || { tail -n 200 /tmp/php_server.log; exit 1; }
+
           # Update
-          if [ "${{ inputs.dry_run }}" = "true" ]; then php craft update/info || true; else
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            php craft update/info || true
+          else
             php craft migrate/all || true
             php craft project-config/apply --interactive=0 || true
             php craft update all --interactive=0 --backup=0 || true
             composer update --no-interaction --no-progress || true
           fi
+
           # Post-Health
           c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/ || true)
           kill "$(cat /tmp/php_pid)" || true
           [ "$c" = "200" -o "$c" = "302" ] || { echo "HTTP $c"; tail -n 200 /tmp/php_server.log || true; exit 1; }
-          # PR-Vorbereitung minimal
+
+          # PR-Meta
           echo "DATE=$DATE" >> $GITHUB_ENV
-          if [ -z "$(git status --porcelain composer.lock)" ]; then mkdir -p ../docs; date -u +"%FT%TZ" > ../docs/last-update.txt; git add ../docs/last-update.txt; fi
-          # Envoyer optional
-          if [ "${{ inputs.envoyer }}" = "true" ] && [ -n "${ENVOYER_HOOK:-}" ]; then
-            curl -fsS -X POST "$ENVOYER_HOOK" -o /dev/null
-            if [ -n "${PROD_ROOT:-}" ]; then
-              end=$((SECONDS+600)); ok=0; while [ $SECONDS -lt $end ]; do code=$(curl -fsS -o /dev/null -w "%{http_code}" "$PROD_ROOT" || true); [ "$code" = "200" ] && ok=1 && break; sleep 5; done; test $ok -eq 1
-            fi
-          fi
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
@@ -111,14 +108,5 @@ jobs:
           commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
           title: "Craft deps update ${{ env.DATE }}"
           body: |
-            CI-Update mit Pre und Post Health auf lokalem Server.
+            CI-Update mit Pre und Post Health (lokal).
             Backup: ${{ inputs.skip_backup != true && 'gezogen' || 'übersprungen' }}.
-            Envoyer: ${{ inputs.envoyer && 'getriggert' || 'aus' }}.
-
-      - name: Backup als Artifact
-        if: ${{ inputs.skip_backup != true }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-backup-${{ github.run_id }}
-          path: craft/backups/Backup.sql
-          if-no-files-found: warn
