@@ -1,0 +1,155 @@
+name: Reusable Craft Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: "environment: test staging production"
+        required: true
+        type: string
+      task:
+        description: "backup update both"
+        required: true
+        type: string
+      dry_run:
+        description: "nur Check und Diff ohne Apply"
+        required: false
+        default: false
+        type: boolean
+      skip_backup:
+        description: "Backup überspringen"
+        required: false
+        default: false
+        type: boolean
+      target:
+        description: "optional health URL override"
+        required: false
+        type: string
+    secrets:
+      CRAFT_SSH_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: craft-${{ inputs.env }}
+  cancel-in-progress: false
+
+env:
+  PHP_VERSION: "8.2"
+  COMPOSER_NO_INTERACTION: "1"
+
+jobs:
+  craft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          coverage: none
+          tools: composer
+
+      - name: Composer cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.composer/cache
+            vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Resolve target endpoints
+        id: tgt
+        run: |
+          case "${{ inputs.env }}" in
+            test)    DEF="https://test.example.com/health.php" ;;
+            staging) DEF="https://staging.example.com/health.php" ;;
+            production) DEF="https://prod.example.com/health.php" ;;
+          esac
+          T="${{ inputs.target }}"
+          if [ -z "$T" ]; then T="$DEF"; fi
+          echo "url=$T" >> "$GITHUB_OUTPUT"
+
+      - name: Pre-Healthcheck
+        run: |
+          set -e
+          for i in {1..10}; do
+            RES="$(curl -sS -f "${{ steps.tgt.outputs.url }}" || true)"
+            echo "$RES"
+            echo "$RES" | jq -e '.status=="ok"' && exit 0
+            sleep 3
+          done
+          echo "Health pre-check failed"
+          exit 1
+
+      - name: Backup mit Rotation
+        if: ${{ !inputs.skip_backup && (inputs.task == 'backup' || inputs.task == 'both') }}
+        run: |
+          set -e
+          mkdir -p my-backups
+          TS="$(date +'%Y-%m-%d_%H-%M-%S')"
+          FILE="my-backups/backup_${{ inputs.env }}_${TS}.sql"
+          php craft db/backup "$FILE"
+          md5sum "$FILE" >> my-backups/backup_log.txt
+          find my-backups -name '*.sql' -mtime +14 -print -delete
+
+      - name: Update Dry Run
+        if: ${{ inputs.dry_run && (inputs.task == 'update' || inputs.task == 'both') }}
+        run: |
+          set -e
+          composer outdated || true
+          php craft project-config/diff || true
+
+      - name: Update Apply
+        if: ${{ !inputs.dry_run && (inputs.task == 'update' || inputs.task == 'both') }}
+        run: |
+          set -e
+          composer update --no-interaction --prefer-dist --no-progress
+          php craft project-config/apply --force
+          php craft migrate/all
+
+      - name: Post-Healthcheck
+        if: ${{ inputs.task == 'update' || inputs.task == 'both' }}
+        run: |
+          set -e
+          for i in {1..10}; do
+            RES="$(curl -sS -f "${{ steps.tgt.outputs.url }}" || true)"
+            echo "$RES"
+            echo "$RES" | jq -e '.status=="ok"' && exit 0
+            sleep 3
+          done
+          echo "Health post-check failed"
+          exit 1
+
+      - name: Artefakte hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craft-${{ inputs.env }}-${{ github.run_id }}
+          path: |
+            my-backups/*.sql
+            my-backups/backup_log.txt
+          if-no-files-found: ignore
+
+      - name: Zusammenfassung
+        if: always()
+        run: |
+          {
+            echo "## Craft Run"
+            echo "Environment: ${{ inputs.env }}"
+            echo "Task: ${{ inputs.task }}"
+            echo "Dry run: ${{ inputs.dry_run }}"
+            echo "Backup: ${{ !inputs.skip_backup }}"
+            echo "Health URL: ${{ steps.tgt.outputs.url }}"
+          } >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,32 @@
+name: Craft Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "backup update both"
+        type: choice
+        options: [backup, update, both]
+        required: true
+      dry_run:
+        description: "nur Check und Diff ohne Apply"
+        type: boolean
+        default: false
+      skip_backup:
+        description: "Backup überspringen"
+        type: boolean
+        default: false
+      target:
+        description: "optional health URL override"
+        type: string
+        required: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/reusable-craft.yml
+    with:
+      env: test
+      task: ${ github.event.inputs.task }
+      dry_run: ${ github.event.inputs.dry_run }
+      skip_backup: ${ github.event.inputs.skip_backup }
+      target: ${ github.event.inputs.target }
