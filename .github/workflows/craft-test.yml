@@ -1,6 +1,8 @@
 name: craft-test-mini
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [craft-cms-updater] 
     inputs:
       dry_run: {description: 'Nur anzeigen', type: boolean, default: false}
       skip_backup: {description: 'DB-Backup überspringen', type: boolean, default: true}
