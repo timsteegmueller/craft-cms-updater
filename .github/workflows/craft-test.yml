@@ -2,7 +2,7 @@ name: craft-test-mini
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [craft-cms-updater] 
+    types: [craft-cms-updater]
     inputs:
       dry_run: {description: 'Nur anzeigen', type: boolean, default: false}
       skip_backup: {description: 'DB-Backup überspringen', type: boolean, default: true}
@@ -56,14 +56,54 @@ jobs:
         run: |
           mkdir -p docs
           date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/last-update.txt
+  # 1) Datum für den PR-Titel
+      - name: Set PR meta
+        run: echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
       
+      # 2) Changelog aus craft/composer.lock bauen (nur direkte Deps)
+      - name: Changelog (craft/)
+        id: cl
+        working-directory: ./craft
+        run: |
+          composer outdated --direct --format=json > /tmp/outdated.json || true
+          jq -r '.installed[]? | "- **\(.name)** \(.version) → \(.latest)\t(\(.latest-status // "latest"))"' /tmp/outdated.json > /tmp/changelog.md || true
+          [ -s /tmp/changelog.md ] || echo "No direct dependency changes." > /tmp/changelog.md
+      
+      # 3) PR-Body zusammenstellen (mit „Files changed“ und Link zum Run)
+      - name: Build PR body
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+          echo "## Craft CMS Update"
+          echo
+          echo "**Date:** ${{ env.DATE }}"
+          echo "**Trigger:** ${{ github.event_name }}${{ github.event.action && format(' ({0})', github.event.action) || '' }}"
+          echo
+          echo "### Files changed"
+          echo "- craft/composer.lock – Updated dependencies"
+          if [ -n "$(git status --porcelain craft/backups | head -n1)" ]; then
+           echo "- craft/backups – New backup file"
+          fi
+          echo
+          echo "### Changelog (direct deps)"
+          cat /tmp/changelog.md
+          echo
+          echo "[View run]($RUN_URL)"
+          } > PR_BODY.md
+    
+    
       - name: Create PR
         if: ${{ inputs.prepare_pr || inputs.prepare_pr == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
-          # ohne add-paths: action nimmt alle Änderungen mit
+          add-paths: |
+            craft/composer.lock
+            # optional: craft/backups/**   # nur anhängen, wenn du Backups mitcommitten willst
+          body-path: PR_BODY.md
           commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
           title: "Craft deps update ${{ env.DATE }}"
           branch: update/${{ env.DATE }}-${{ github.run_number }}
-          labels: dependencies, craft-update
+          labels: craft-update, dependencies
+
+
 
