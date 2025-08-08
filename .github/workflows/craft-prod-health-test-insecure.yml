@@ -1,10 +1,11 @@
-# .github/workflows/craft-prod-health-test-insecure.yml
 name: craft-prod-health-test-insecure
 
 on:
   workflow_dispatch:
     inputs:
-      envoyer: { description: "Envoyer ausführen", type: boolean, default: false }
+      health_url: { description: 'Override PROD_HEALTH_URL', type: string, required: false }
+      root_url:   { description: 'Override PROD_ROOT_URL',  type: string, required: false }
+      envoyer:    { description: 'Envoyer ausführen',       type: boolean, default: false }
 
 permissions:
   contents: read
@@ -17,6 +18,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Falls Secrets in einer Environment "production" liegen, UNBEDINGT setzen:
+    # environment: production
     env:
       PROD_HEALTH_URL: ${{ secrets.PROD_HEALTH_URL }}
       PROD_ROOT_URL:  ${{ secrets.PROD_ROOT_URL }}
@@ -29,6 +32,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
+
+      - name: Overrides anwenden (optional)
+        run: |
+          [ -n "${{ inputs.health_url }}" ] && echo "PROD_HEALTH_URL=${{ inputs.health_url }}" >> $GITHUB_ENV
+          [ -n "${{ inputs.root_url }}" ]   && echo "PROD_ROOT_URL=${{ inputs.root_url }}"   >> $GITHUB_ENV
+
+      - name: URLs validieren
+        run: |
+          : "${PROD_HEALTH_URL:?Setze das Repo-Secret PROD_HEALTH_URL oder gib input.health_url an}"
+          : "${PROD_ROOT_URL:?Setze das Repo-Secret PROD_ROOT_URL oder gib input.root_url an}"
+          echo "::notice title=Health::$(echo "$PROD_HEALTH_URL" | sed 's/[?].*//')"
+          echo "::notice title=Root::$(echo "$PROD_ROOT_URL" | sed 's/[?].*//')"
 
       - name: Health prüfen mit pseudo SSL
         run: |
