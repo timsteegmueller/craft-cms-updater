@@ -29,7 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Tools
         run: |
@@ -44,8 +47,8 @@ jobs:
               echo "SSH_HOST=${{ secrets.BASE_SSH_HOST }}" >> $GITHUB_ENV
               echo "SSH_USER=${{ secrets.BASE_SSH_USER }}" >> $GITHUB_ENV
               echo "PROJECT_PATH=${{ secrets.BASE_PROJECT_PATH }}" >> $GITHUB_ENV
-              echo "HEALTH_URL=${{ secrets.BASE_HEALTH_URL }}" >> $GITHUB_ENV   # leer ok
-              echo "ROOT_URL=${{ secrets.BASE_ROOT_URL }}" >> $GITHUB_ENV       # leer ok
+              echo "HEALTH_URL=${{ secrets.BASE_HEALTH_URL }}" >> $GITHUB_ENV
+              echo "ROOT_URL=${{ secrets.BASE_ROOT_URL }}" >> $GITHUB_ENV
               echo "ENVOYER_HOOK=${{ secrets.BASE_ENVOYER_HOOK_URL }}" >> $GITHUB_ENV
               ;;
             staging)
@@ -94,8 +97,9 @@ jobs:
             php craft db/backup storage/backups/db_${TS}.sql
             gzip -f storage/backups/db_${TS}.sql
             echo storage/backups/db_${TS}.sql.gz" | tee remote_path.txt
-          mkdir -p backups/${{ inputs.env }}
+          mkdir -p "backups/${{ inputs.env }}"
           scp "$SSH_USER@$SSH_HOST:$(cat remote_path.txt)" "backups/${{ inputs.env }}/"
+
       - name: Backup als Artifact
         if: ${{ inputs.skip_backup != 'true' }}
         uses: actions/upload-artifact@v4
@@ -107,8 +111,11 @@ jobs:
       - name: Envoyer deploy
         if: ${{ inputs.envoyer || inputs.envoyer == 'true' }}
         run: |
-          [ -n "$ENVOYER_HOOK" ] || { echo "ENVOYER_HOOK leer, überspringe"; exit 0; }
-          curl --fail --silent --show-error --retry 3 -X POST "$ENVOYER_HOOK"
+          if [ -n "$ENVOYER_HOOK" ]; then
+            curl --fail --silent --show-error --retry 3 -X POST "$ENVOYER_HOOK"
+          else
+            echo "ENVOYER_HOOK leer, überspringe"
+          fi
 
       - name: Warten bis gesund
         if: ${{ env.HEALTH_URL != '' && env.ROOT_URL != '' }}
