@@ -1,192 +1,208 @@
 name: craft-test
 
 on:
-  workflow_dispatch:
-    inputs:
-      env:
-        description: 'Zielumgebung'
-        type: choice
-        options: [base, staging, production]
-        default: base
-      task:
-        description: 'Aktion'
-        type: choice
-        options: [both, update, backup]
-        default: both
-      skip_backup:
-        description: 'DB-Backup überspringen'
-        type: boolean
-        default: false
-      prepare_pr:
-        description: 'PR mit composer.lock erstellen'
-        type: boolean
-        default: true
-      envoyer_hook_url:
-        description: 'Optional: Envoyer Deploy Hook URL'
-        type: string
-        required: false
+    workflow_dispatch:
+        inputs:
+            env:
+                description: 'Zielumgebung'
+                type: choice
+                options: [base, staging, production]
+                default: base
+            task:
+                description: 'Aktion'
+                type: choice
+                options: [both, update, backup]
+                default: both
+            skip_backup:
+                description: 'DB-Backup überspringen'
+                type: boolean
+                default: false
+            prepare_pr:
+                description: 'PR mit composer.lock erstellen'
+                type: boolean
+                default: true
+            envoyer_hook_url:
+                description: 'Optional: Envoyer Deploy Hook URL'
+                type: string
+                required: false
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+    contents: write
+    pull-requests: write
+    issues: write
 
 concurrency:
-  group: craft-${{ github.ref }}
-  cancel-in-progress: true
+    group: craft-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-  run:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      ENV_NAME: ${{ inputs.env }}
-      TASK: ${{ inputs.task }}
-      COMPOSER_MEMORY_LIMIT: -1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          coverage: none
-          tools: composer
-
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Composer install im Repo-Root
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: URLs für die Umgebung setzen
-        run: |
-          case "${{ inputs.env }}" in
-            base)
-              echo "HEALTH_URL=http://farbcode-base.test/cms/health.php?token=${{ secrets.HEALTH_TOKEN }}" >> $GITHUB_ENV
-              echo "ROOT_URL=http://farbcode-base.test/" >> $GITHUB_ENV
-              echo "SKIP_HEALTH=true" >> $GITHUB_ENV
-              ;;
-            *)
-              echo "HEALTH_URL=${{ secrets.HEALTH_URL_OTHER }}" >> $GITHUB_ENV
-              echo "ROOT_URL=${{ secrets.ROOT_URL_OTHER }}" >> $GITHUB_ENV
-              echo "SKIP_HEALTH=false" >> $GITHUB_ENV
-              ;;
-          esac
-
-      - name: Composer install in ./craft
-        working-directory: ./craft
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Pre-Health
-        if: ${{ env.SKIP_HEALTH != 'true' }}
-        run: |
-          curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
-
-      - name: DB-Backup
-        if: ${{ inputs.skip_backup != true && inputs.task != 'update' }}
-        working-directory: ./craft
-        run: |
-          TS=$(date +%Y-%m-%d_%H-%M-%S)
-          mkdir -p ../backups
-          php craft db/backup ../backups/db_$TS.sql
-          gzip -f ../backups/db_$TS.sql
-
-      - name: Run Update
-        working-directory: ./craft
-        run: |
-          if [ "${{ inputs.dry_run }}" = "true" ]; then # <-- RICHTIGE EINRÜCKUNG
-            echo "Dry run - showing available updates"
-            php craft update/info || echo "Update info not available"
-          else
-            echo "Running Craft update"
-            php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
-            composer update --no-interaction || echo "Composer update completed with warnings"
-          fi
-
-
-      - name: Post-Health
-        if: ${{ env.SKIP_HEALTH != 'true' }}
-        run: |
-          curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
-
-      - name: Root-200
-        if: ${{ env.SKIP_HEALTH != 'true' }}
-        run: |
-          curl -sS -o /dev/null -w "%{http_code}\n" "$ROOT_URL" | grep -q '^200$'
-
-      - name: PR mit composer.lock
-        if: ${{ inputs.prepare_pr == true && inputs.task != 'backup' }}
-        uses: peter-evans/create-pull-request@v6
-        with:
-          commit-message: "chore(update): Craft und Composer aktualisiert"
-          title: "Update ${{ github.repository }} ${{ github.run_id }}"
-          branch: update/${{ github.run_id }}-${{ github.run_number }}
-          labels: dependencies, craft-update
-          body: |
-            Automatisches Update. Bitte prüfen und mergen.
-
-      - name: Envoyer deploy
-        if: ${{ success() && inputs.env == 'production' && inputs.envoyer_hook_url != '' }}
-        run: |
-          curl -fsS -X POST "${{ inputs.envoyer_hook_url }}"
-
-  n8n-notify:
-    if: ${{ always() }}
-    needs: [run]
-    runs-on: ubuntu-latest
-    env:
-      N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
-      N8N_WEBHOOK_SECRET: ${{ secrets.N8N_WEBHOOK_SECRET }}
-      ENV_NAME: ${{ inputs.env }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          coverage: none
-          tools: composer
-
-      - name: Composer install im Repo-Root
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Changelog aus "composer outdated"
-        id: cl
-        run: |
-          composer outdated --direct --format=json > /tmp/outdated.json || true
-          if [ -s /tmp/outdated.json ]; then
-            jq -r '.installed[]? | "- \(.name) \(.version) → \(.latest)"' /tmp/outdated.json > /tmp/changelog.md || true
-          fi
-          if [ ! -s /tmp/changelog.md ]; then
-            echo "No direct dependency changes detected." > /tmp/changelog.md
-          fi
-          echo "md<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/changelog.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Payload bauen
-        id: payload
+    run:
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
         env:
-          RUN_RESULT: ${{ needs.run.result }}
-        run: |
-          STATUS="${RUN_RESULT:-unknown}"
-          CHANGELOG="$(cat /tmp/changelog.md || echo 'n/a')"
-          jq -n --arg client "${{ github.repository }}"                 --arg env "$ENV_NAME"                 --arg status "$STATUS"                 --arg changelog_md "$CHANGELOG"                 '{client:$client, env:$env, status:$status, changelog_md:$changelog_md}' > /tmp/payload.json
-          cat /tmp/payload.json
+            ENV_NAME: ${{ inputs.env }}
+            TASK: ${{ inputs.task }}
+            COMPOSER_MEMORY_LIMIT: -1
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      - name: An n8n melden
-        if: ${{ env.N8N_WEBHOOK_URL != '' }}
-        run: |
-          SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
-          curl -fsS -X POST "$N8N_WEBHOOK_URL"             -H "Content-Type: application/json"             -H "X-Signature: $SIG"             --data-binary @/tmp/payload.json
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.2'
+                  coverage: none
+                  tools: composer
+
+            - name: Install jq
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y jq
+
+            - name: Composer install im Repo-Root
+              run: composer install --no-interaction --prefer-dist --no-progress
+
+            - name: URLs für die Umgebung setzen
+              run: |
+                  case "${{ inputs.env }}" in
+                    base)
+                      echo "HEALTH_URL=http://farbcode-base.test/cms/health.php?token=${{ secrets.HEALTH_TOKEN }}" >> $GITHUB_ENV
+                      echo "ROOT_URL=http://farbcode-base.test/" >> $GITHUB_ENV
+                      echo "SKIP_HEALTH=true" >> $GITHUB_ENV
+                      ;;
+                    *)
+                      echo "HEALTH_URL=${{ secrets.HEALTH_URL_OTHER }}" >> $GITHUB_ENV
+                      echo "ROOT_URL=${{ secrets.ROOT_URL_OTHER }}" >> $GITHUB_ENV
+                      echo "SKIP_HEALTH=false" >> $GITHUB_ENV
+                      ;;
+                  esac
+
+            - name: Composer install in ./craft
+              working-directory: ./craft
+              run: composer install --no-interaction --prefer-dist --no-progress
+
+            - name: Pre-Health
+              if: ${{ env.SKIP_HEALTH != 'true' }}
+              run: |
+                  curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
+
+            - name: DB-Backup
+              if: ${{ inputs.skip_backup != true && inputs.task != 'update' }}
+              working-directory: ./craft
+              run: |
+                  TS=$(date +%Y-%m-%d_%H-%M-%S)
+                  mkdir -p ../backups
+                  php craft db/backup ../backups/db_$TS.sql
+                  gzip -f ../backups/db_$TS.sql
+
+            - name: Run Update
+              working-directory: ./craft
+              run: |
+                  if [ "${{ inputs.dry_run }}" = "true" ]; then # <-- RICHTIGE EINRÜCKUNG
+                    echo "Dry run - showing available updates"
+                    php craft update/info || echo "Update info not available"
+                  else
+                    echo "Running Craft update"
+                    php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
+                    composer update --no-interaction || echo "Composer update completed with warnings"
+                  fi
+
+
+            - name: Post-Health
+              if: ${{ env.SKIP_HEALTH != 'true' }}
+              run: |
+                  curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
+
+            - name: Root-200
+              if: ${{ env.SKIP_HEALTH != 'true' }}
+              run: |
+                  curl -sS -o /dev/null -w "%{http_code}\n" "$ROOT_URL" | grep -q '^200$'
+
+            - name: PR-Metadaten setzen
+              run: |
+                  echo "DATEI=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
+                  echo "ENV_NAME=${{ inputs.env }}" >> $GITHUB_ENV
+                  
+            - name: Composer Update im Repo-Root
+              run: composer update --no-interaction --prefer-dist --no-progress
+  
+             
+
+            -   name: PR mit composer.lock
+                if: ${{ inputs.prepare_pr == 'true' && inputs.task != 'backup' }}
+                uses: peter-evans/create-pull-request@v6
+                with:
+                    add-paths: |
+                        craft/composer.lock
+                        composer.lock
+                    commit-message: "chore(update): Craft deps aktualisiert (${% raw %}{{ env.DATE }}{% endraw %}, ${{ env.ENV_NAME }})"
+                    title: "Craft deps update ${{ env.DATE }} (${{ env.ENV_NAME }})"
+                    branch: update/${{ env.DATE }}-${{ github.run_number }}
+                    labels: dependencies, craft-update
+                    body: |
+                        Automatisches Update für Craft (env ${{ env.ENV_NAME }}).
+                        Siehe composer.lock Änderungen im Ordner "craft".
+            
+            
+            - name: Envoyer deploy
+              if: ${{ success() && inputs.env == 'production' && inputs.envoyer_hook_url != '' }}
+              run: |
+                  curl -fsS -X POST "${{ inputs.envoyer_hook_url }}"
+
+    n8n-notify:
+        if: ${{ always() }}
+        needs: [run]
+        runs-on: ubuntu-latest
+        env:
+            N8N_WEBHOOK_URL: ${{ secrets.N8N_WEBHOOK_URL }}
+            N8N_WEBHOOK_SECRET: ${{ secrets.N8N_WEBHOOK_SECRET }}
+            ENV_NAME: ${{ inputs.env }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.2'
+                  coverage: none
+                  tools: composer
+
+            - name: Composer install im Repo-Root
+              run: composer install --no-interaction --prefer-dist --no-progress
+
+            - name: Changelog aus "composer outdated"
+              id: cl
+              run: |
+                  composer outdated --direct --format=json > /tmp/outdated.json || true
+                  if [ -s /tmp/outdated.json ]; then
+                    jq -r '.installed[]? | "- \(.name) \(.version) → \(.latest)"' /tmp/outdated.json > /tmp/changelog.md || true
+                  fi
+                  if [ ! -s /tmp/changelog.md ]; then
+                    echo "No direct dependency changes detected." > /tmp/changelog.md
+                  fi
+                  echo "md<<EOF" >> $GITHUB_OUTPUT
+                  cat /tmp/changelog.md >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Payload bauen
+              id: payload
+              env:
+                  RUN_RESULT: ${{ needs.run.result }}
+              run: |
+                  STATUS="${RUN_RESULT:-unknown}"
+                  CHANGELOG="$(cat /tmp/changelog.md || echo 'n/a')"
+                  jq -n --arg client "${{ github.repository }}"                 --arg env "$ENV_NAME"                 --arg status "$STATUS"                 --arg changelog_md "$CHANGELOG"                 '{client:$client, env:$env, status:$status, changelog_md:$changelog_md}' > /tmp/payload.json
+                  cat /tmp/payload.json
+
+            - name: An n8n melden
+              if: ${{ env.N8N_WEBHOOK_URL != '' }}
+              run: |
+                  SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
+                  curl -fsS -X POST "$N8N_WEBHOOK_URL"             -H "Content-Type: application/json"             -H "X-Signature: $SIG"             --data-binary @/tmp/payload.json
+
 
