@@ -50,16 +50,18 @@ jobs:
             git add docs/last-update.txt
           fi
 
+      - name: Ensure change
+        run: |
+          mkdir -p docs
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/last-update.txt
+      
       - name: Create PR
-        if: ${{ inputs.prepare_pr || inputs.prepare_pr == 'true' }}        
+        if: ${{ inputs.prepare_pr || inputs.prepare_pr == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
-          add-paths: |
-            craft/composer.lock
-            docs/last-update.txt
+          # ohne add-paths: action nimmt alle Änderungen mit
           commit-message: "chore(update): Craft deps aktualisiert (${{ env.DATE }})"
           title: "Craft deps update ${{ env.DATE }}"
           branch: update/${{ env.DATE }}-${{ github.run_number }}
           labels: dependencies, craft-update
-          body: |
-            Automatisches Update (mini workflow). Änderungen siehe Dateien.
+
