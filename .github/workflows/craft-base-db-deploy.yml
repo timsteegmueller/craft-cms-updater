@@ -1,0 +1,93 @@
+# .github/workflows/craft-base-db-deploy.yml
+name: craft-base-db-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      envoyer:       { description: "Envoyer ausführen", type: boolean, default: true }
+      skip_backup:   { description: "Backup überspringen", type: boolean, default: false }
+      skip_health:   { description: "Health-Checks überspringen", type: boolean, default: false }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-base
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_HOST: ${{ secrets.BASE_SSH_HOST }}
+      SSH_USER: ${{ secrets.BASE_SSH_USER }}
+      PROJECT_PATH: ${{ secrets.BASE_PROJECT_PATH }}
+      HEALTH_URL: ${{ secrets.BASE_HEALTH_URL }}     # darf intern sein
+      ROOT_URL: ${{ secrets.BASE_ROOT_URL }}         # darf intern sein
+      ENVOYER_HOOK: ${{ secrets.BASE_ENVOYER_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq openssh-client
+
+      - name: ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.BASE_SSH_KEY }}
+
+      - name: Hostkey trusten
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          echo "TS=$(date +%Y-%m-%d_%H-%M-%S)" >> $GITHUB_ENV
+
+      - name: Pre-Health remote
+        if: ${{ !(inputs.skip_health == true || inputs.skip_health == 'true') && env.HEALTH_URL != '' }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "curl -fsSL -k \"$HEALTH_URL\" | jq -e '.status==\"ok\"'"
+
+      - name: DB-Backup remote
+        if: ${{ !(inputs.skip_backup == true || inputs.skip_backup == 'true') }}
+        run: |
+          ssh "$SSH_USER@$SSH_HOST" "set -euo pipefail
+            cd \"$PROJECT_PATH\"
+            mkdir -p storage/backups
+            php craft db/backup storage/backups/db_${TS}.sql
+            gzip -f storage/backups/db_${TS}.sql
+            echo storage/backups/db_${TS}.sql.gz" | tee remote_path.txt
+          mkdir -p backups/base
+          scp "$SSH_USER@$SSH_HOST:$(cat remote_path.txt)" "backups/base/"
+
+      - name: Backup als Artifact
+        if: ${{ !(inputs.skip_backup == true || inputs.skip_backup == 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-base-${{ env.TS }}
+          path: backups/base/*.sql.gz
+          if-no-files-found: ignore
+
+      - name: Envoyer deploy
+        if: ${{ inputs.envoyer == true || inputs.envoyer == 'true' }}
+        run: |
+          [ -n "$ENVOYER_HOOK" ] && curl --fail --silent --show-error --retry 3 -X POST "$ENVOYER_HOOK" || echo "kein Envoyer Hook"
+
+      - name: Warten bis gesund remote
+        if: ${{ !(inputs.skip_health == true || inputs.skip_health == 'true') && env.HEALTH_URL != '' && env.ROOT_URL != '' }}
+        run: |
+          end=$((SECONDS+600)); ok=0
+          while [ $SECONDS -lt $end ]; do
+            if ssh "$SSH_USER@$SSH_HOST" "curl -fsSL -k \"$HEALTH_URL\" | jq -e '.status==\"ok\"' >/dev/null" && \
+               [ "$(ssh "$SSH_USER@$SSH_HOST" "curl -fsSL -o /dev/null -w '%{http_code}\n' -k \"$ROOT_URL\"")" = "200" ]; then
+              ok=1; break
+            fi
+            sleep 10
+          done
+          test $ok -eq 1
+
+      - name: Done
+        run: echo "Base ok • ${ env.TS }"
