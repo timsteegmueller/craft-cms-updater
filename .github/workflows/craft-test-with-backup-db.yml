@@ -83,6 +83,11 @@ jobs:
         run: |
           curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
 
+      - name: Composer install in craft/
+        working-directory: ./craft
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+
       - name: DB-Backup
         if: ${{ inputs.skip_backup != true && inputs.task != 'update' }}
         working-directory: ./craft
@@ -180,3 +185,4 @@ jobs:
         run: |
           SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
           curl -fsS -X POST "$N8N_WEBHOOK_URL"             -H "Content-Type: application/json"             -H "X-Signature: $SIG"             --data-binary @/tmp/payload.json
+
