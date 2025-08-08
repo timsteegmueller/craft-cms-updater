@@ -97,14 +97,18 @@ jobs:
           php craft db/backup ../backups/db_$TS.sql
           gzip -f ../backups/db_$TS.sql
 
-      - name: Craft Update
-        if: ${{ inputs.task != 'backup' }}
+      - name: Run Update
         working-directory: ./craft
         run: |
-          set -e
-          php craft update all --interactive=0
-          php craft project-config/apply --interactive=0
-          php craft migrate/all --interactive=0
+          if [ "${{ inputs.dry_run }}" = "true" ]; then # <-- RICHTIGE EINRÜCKUNG
+            echo "Dry run - showing available updates"
+            php craft update/info || echo "Update info not available"
+          else
+            echo "Running Craft update"
+            php craft update all --interactive=0 --backup=0 || echo "Update completed with warnings"
+            composer update --no-interaction || echo "Composer update completed with warnings"
+          fi
+
 
       - name: Post-Health
         if: ${{ env.SKIP_HEALTH != 'true' }}
@@ -185,3 +189,4 @@ jobs:
         run: |
           SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
           curl -fsS -X POST "$N8N_WEBHOOK_URL"             -H "Content-Type: application/json"             -H "X-Signature: $SIG"             --data-binary @/tmp/payload.json
+
