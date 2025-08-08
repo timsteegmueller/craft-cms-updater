@@ -1,32 +1,47 @@
-name: Craft Production
+name: craft-prod-mini
 
 on:
   workflow_dispatch:
     inputs:
-      task:
-        description: "backup update both"
-        type: choice
-        options: [backup, update, both]
-        required: true
-      dry_run:
-        description: "nur Check und Diff ohne Apply"
+      envoyer:
+        description: 'Envoyer ausführen'
         type: boolean
-        default: false
-      skip_backup:
-        description: "Backup überspringen"
-        type: boolean
-        default: false
-      target:
-        description: "optional health URL override"
-        type: string
-        required: false
+        default: true
+
+permissions:
+  contents: read
 
 jobs:
-  run:
-    uses: ./.github/workflows/reusable-craft.yml
-    with:
-      env: production
-      task: ${ github.event.inputs.task }
-      dry_run: ${ github.event.inputs.dry_run }
-      skip_backup: ${ github.event.inputs.skip_backup }
-      target: ${ github.event.inputs.target }
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROD_HEALTH_URL: ${{ secrets.PROD_HEALTH_URL }}
+      PROD_ROOT_URL: ${{ secrets.PROD_ROOT_URL }}
+      ENVOYER_HOOK_URL: ${{ secrets.ENVOYER_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Pre-Health
+        run: |
+          curl -fsS "$PROD_HEALTH_URL" | jq -e '.status=="ok"'
+
+      - name: Envoyer deploy
+        if: ${{ inputs.envoyer || inputs.envoyer == 'true' }}
+        run: curl -fsS -X POST "$ENVOYER_HOOK_URL"
+
+      - name: Warten bis gesund
+        run: |
+          end=$((SECONDS+600))
+          ok=0
+          while [ $SECONDS -lt $end ]; do
+            if curl -fsS "$PROD_HEALTH_URL" | jq -e '.status=="ok"' >/dev/null && \
+               [ "$(curl -fsS -o /dev/null -w "%{http_code}\n" "$PROD_ROOT_URL")" = "200" ]; then
+              ok=1; break
+            fi
+            sleep 10
+          done
+          test $ok -eq 1
+
+      - name: Fertig
+        run: echo "Production ok"
