@@ -69,15 +69,17 @@ jobs:
             base)
               echo "HEALTH_URL=http://farbcode-base.test/cms/health.php?token=${{ secrets.HEALTH_TOKEN }}" >> $GITHUB_ENV
               echo "ROOT_URL=http://farbcode-base.test/" >> $GITHUB_ENV
+              echo "SKIP_HEALTH=true" >> $GITHUB_ENV
               ;;
             *)
-              # Platzhalter für weitere Umgebungen
               echo "HEALTH_URL=${{ secrets.HEALTH_URL_OTHER }}" >> $GITHUB_ENV
               echo "ROOT_URL=${{ secrets.ROOT_URL_OTHER }}" >> $GITHUB_ENV
+              echo "SKIP_HEALTH=false" >> $GITHUB_ENV
               ;;
           esac
 
       - name: Pre-Health
+        if: ${{ env.SKIP_HEALTH != 'true' }}
         run: |
           curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
 
@@ -86,6 +88,7 @@ jobs:
         working-directory: ./craft
         run: |
           TS=$(date +%Y-%m-%d_%H-%M-%S)
+          mkdir -p ../backups
           php craft db/backup ../backups/db_$TS.sql
           gzip -f ../backups/db_$TS.sql
 
@@ -99,10 +102,12 @@ jobs:
           php craft migrate/all --interactive=0
 
       - name: Post-Health
+        if: ${{ env.SKIP_HEALTH != 'true' }}
         run: |
           curl -sS -f "$HEALTH_URL" | jq -e '.status=="ok"'
 
       - name: Root-200
+        if: ${{ env.SKIP_HEALTH != 'true' }}
         run: |
           curl -sS -o /dev/null -w "%{http_code}\n" "$ROOT_URL" | grep -q '^200$'
 
@@ -167,18 +172,11 @@ jobs:
         run: |
           STATUS="${RUN_RESULT:-unknown}"
           CHANGELOG="$(cat /tmp/changelog.md || echo 'n/a')"
-          jq -n --arg client "${{ github.repository }}" \
-                --arg env "$ENV_NAME" \
-                --arg status "$STATUS" \
-                --arg changelog_md "$CHANGELOG" \
-                '{client:$client, env:$env, status:$status, changelog_md:$changelog_md}' > /tmp/payload.json
+          jq -n --arg client "${{ github.repository }}"                 --arg env "$ENV_NAME"                 --arg status "$STATUS"                 --arg changelog_md "$CHANGELOG"                 '{client:$client, env:$env, status:$status, changelog_md:$changelog_md}' > /tmp/payload.json
           cat /tmp/payload.json
 
       - name: An n8n melden
         if: ${{ env.N8N_WEBHOOK_URL != '' }}
         run: |
           SIG=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -binary /tmp/payload.json | xxd -p -c 256)
-          curl -fsS -X POST "$N8N_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -H "X-Signature: $SIG" \
-            --data-binary @/tmp/payload.json
+          curl -fsS -X POST "$N8N_WEBHOOK_URL"             -H "Content-Type: application/json"             -H "X-Signature: $SIG"             --data-binary @/tmp/payload.json
