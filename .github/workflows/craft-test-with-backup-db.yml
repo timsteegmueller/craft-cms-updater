@@ -132,7 +132,7 @@ jobs:
 
       - name: Git-Status debug
         run: git status --porcelain
-      - - name: Update-Stamp schreiben wenn keine Änderungen
+      - name: Update-Stamp schreiben wenn keine Änderungen
       - run: |
       - if [ -z "$(git status --porcelain)" ]; then
       - mkdir -p docs
